@@ -1,5 +1,18 @@
 package demo.ticket_app.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
 import demo.ticket_app.dto.admin.AdminPaymentItemResponse;
 import demo.ticket_app.dto.admin.AdminPayoutExecuteResponse;
 import demo.ticket_app.dto.admin.AdminPayoutPreviewResponse;
@@ -25,18 +38,6 @@ import demo.ticket_app.repository.PaymentRepository;
 import demo.ticket_app.repository.SeatMapRepository;
 import demo.ticket_app.repository.TicketTierRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -91,7 +92,8 @@ public class PaymentService {
                 saved.getPlatformFeeAmount(),
                 saved.getGatewayFeeAmount(),
                 saved.getOrganizerNetAmount(),
-                paymentUrl
+            paymentUrl,
+            LocalDateTime.now().plusMinutes(15)
         );
     }
 

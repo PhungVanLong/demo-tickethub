@@ -36,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 public class CheckoutService {
 
     private static final int HOLD_MINUTES = 15;
+    private static final BigDecimal SERVICE_FEE_RATE = new BigDecimal("0.05");
 
     private final EventRepository eventRepository;
     private final TicketTierRepository ticketTierRepository;
@@ -68,14 +69,16 @@ public class CheckoutService {
 
         return new CheckoutQuoteResponse(
                 pricingResult.subtotal(),
+            pricingResult.serviceFee(),
                 pricingResult.discount(),
                 pricingResult.total(),
+            "VND",
                 LocalDateTime.now().plusMinutes(HOLD_MINUTES)
         );
     }
 
     @Transactional
-    public CreateCheckoutOrderResponse createOrder(CreateCheckoutOrderRequest request) {
+        public CreateCheckoutOrderResponse createOrder(CreateCheckoutOrderRequest request, java.util.UUID currentUserId) {
         validateEventIsPublished(request.eventId());
         PricingResult pricingResult = calculatePricing(
                 request.eventId(),
@@ -84,7 +87,7 @@ public class CheckoutService {
         );
 
         Order order = Order.builder()
-                .userId(request.userId())
+            .userId(currentUserId)
                 .orderStatus(OrderStatus.PENDING)
                 .totalAmount(pricingResult.subtotal())
                 .discountAmount(pricingResult.discount())
@@ -108,8 +111,8 @@ public class CheckoutService {
                 savedOrder.getId(),
                 savedOrder.getOrderCode(),
                 savedOrder.getOrderStatus(),
-                savedOrder.getFinalAmount(),
-                LocalDateTime.now().plusMinutes(HOLD_MINUTES)
+            savedOrder.getFinalAmount(),
+            savedOrder.getCreatedAt()
         );
     }
 
@@ -117,7 +120,7 @@ public class CheckoutService {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
         if (event.getStatus() != EventStatus.PUBLISHED) {
-            throw new IllegalArgumentException("Event is not published");
+            throw new ResourceNotFoundException("Event not found with id: " + eventId);
         }
         return event;
     }
@@ -141,8 +144,9 @@ public class CheckoutService {
         }
 
         BigDecimal discount = calculateDiscount(subtotal, voucherCode);
-        BigDecimal total = subtotal.subtract(discount).max(BigDecimal.ZERO);
-        return new PricingResult(pricingItems, subtotal, discount, total);
+        BigDecimal serviceFee = subtotal.multiply(SERVICE_FEE_RATE).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal total = subtotal.add(serviceFee).subtract(discount).max(BigDecimal.ZERO);
+        return new PricingResult(pricingItems, subtotal, serviceFee, discount, total);
     }
 
     private BigDecimal calculateDiscount(BigDecimal subtotal, String voucherCode) {
@@ -189,6 +193,6 @@ public class CheckoutService {
     private record PricingItem(TicketTier ticketTier, int requestedQuantity, BigDecimal lineTotal) {
     }
 
-    private record PricingResult(List<PricingItem> items, BigDecimal subtotal, BigDecimal discount, BigDecimal total) {
+    private record PricingResult(List<PricingItem> items, BigDecimal subtotal, BigDecimal serviceFee, BigDecimal discount, BigDecimal total) {
     }
 }

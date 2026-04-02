@@ -1,17 +1,31 @@
 package demo.ticket_app.entity;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.persistence.*;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
 
 @Entity
 @Table(name = "events")
@@ -31,6 +45,12 @@ public class Event {
     
     @Column(name = "title", nullable = false, length = 255)
     private String title;
+
+    @Column(name = "slug", length = 255, unique = true)
+    private String slug;
+
+    @Column(name = "category", length = 100)
+    private String category;
     
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
@@ -40,6 +60,9 @@ public class Event {
     
     @Column(name = "city", nullable = false, length = 100)
     private String city;
+
+    @Column(name = "country", length = 100)
+    private String country;
     
     @Column(name = "location_coords", length = 100)
     private String locationCoords;
@@ -52,6 +75,21 @@ public class Event {
     
     @Column(name = "banner_url", length = 500)
     private String bannerUrl;
+
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
+    @Column(name = "featured")
+    private Boolean featured;
+
+    @Column(name = "tags", length = 500)
+    private String tags;
+
+    @Column(name = "rating", precision = 3, scale = 2)
+    private BigDecimal rating;
+
+    @Column(name = "review_count")
+    private Long reviewCount;
     
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -83,6 +121,21 @@ public class Event {
         }
         if (status == null) {
             status = EventStatus.DRAFT;
+        }
+        if (featured == null) {
+            featured = false;
+        }
+        if (rating == null) {
+            rating = BigDecimal.ZERO;
+        }
+        if (reviewCount == null) {
+            reviewCount = 0L;
+        }
+        if (country == null || country.isBlank()) {
+            country = "Vietnam";
+        }
+        if (category == null || category.isBlank()) {
+            category = "General";
         }
     }
 }

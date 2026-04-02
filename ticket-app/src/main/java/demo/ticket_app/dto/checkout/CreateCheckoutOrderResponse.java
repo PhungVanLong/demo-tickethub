@@ -7,10 +7,10 @@ import java.util.UUID;
 import demo.ticket_app.entity.OrderStatus;
 
 public record CreateCheckoutOrderResponse(
-        UUID orderId,
+        UUID id,
         String orderCode,
         OrderStatus status,
-        BigDecimal amount,
-        LocalDateTime holdExpiresAt
+        BigDecimal totalAmount,
+        LocalDateTime createdAt
 ) {
 }

@@ -1,7 +1,10 @@
 package demo.ticket_app.config;
 
+import java.util.Arrays;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -11,15 +14,14 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import demo.ticket_app.service.ApplicationUserDetailsService;
-import org.springframework.http.HttpMethod;
 
-import java.util.Arrays;
+import demo.ticket_app.service.ApplicationUserDetailsService;
 
 @Configuration
 @EnableWebSecurity
@@ -49,6 +51,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/health", "/api/docs").permitAll()
                 .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/events/published").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/events/categories").permitAll()
+                    .requestMatchers(new RegexRequestMatcher("^/api/events/[0-9]+$", "GET")).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/events/search").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/events/city/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/events/*/stats/**").permitAll()
@@ -65,6 +69,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/users/*/deactivate").hasRole("ADMIN")
                 .requestMatchers("/api/users/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/stats/platform").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/stats/organizer/**").hasAnyRole("ORGANIZER", "ADMIN")
                 // Customer/Organizer/Admin can submit event idea
                 .requestMatchers(HttpMethod.POST, "/api/events").hasAnyRole("CUSTOMER", "ORGANIZER", "ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/events/**").hasAnyRole("ORGANIZER", "ADMIN")

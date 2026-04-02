@@ -1,10 +1,31 @@
 package demo.ticket_app.service;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import demo.ticket_app.dto.common.PageResponse;
 import demo.ticket_app.dto.event.CreateEventRequest;
+import demo.ticket_app.dto.event.EventDetailResponse;
+import demo.ticket_app.dto.event.EventListItemResponse;
+import demo.ticket_app.dto.event.OrganizerSummaryResponse;
 import demo.ticket_app.entity.ApprovalDecision;
 import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.EventApproval;
 import demo.ticket_app.entity.EventStatus;
+import demo.ticket_app.entity.TicketTier;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.EventApprovalRepository;
 import demo.ticket_app.repository.EventRepository;
@@ -12,13 +33,6 @@ import demo.ticket_app.repository.TicketTierRepository;
 import demo.ticket_app.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +51,42 @@ public class EventService {
 
     public List<Event> getPublishedEvents() {
         return eventRepository.findByStatus(EventStatus.PUBLISHED);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<EventListItemResponse> getPublishedEvents(
+            int page,
+            int size,
+            String category,
+            String city,
+            Boolean featured,
+            String sort
+    ) {
+        String normalizedCategory = normalizeFilter(category);
+        String normalizedCity = normalizeFilter(city);
+
+        if ("price_asc".equals(sort) || "price_desc".equals(sort)) {
+            List<EventListItemResponse> all = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured)
+                .stream()
+                .map(this::toEventListItem)
+                .sorted("price_desc".equals(sort)
+                    ? Comparator.comparing(EventListItemResponse::minPrice, Comparator.nullsLast(BigDecimal::compareTo)).reversed()
+                    : Comparator.comparing(EventListItemResponse::minPrice, Comparator.nullsLast(BigDecimal::compareTo)))
+                .toList();
+
+            int safePage = Math.max(page, 0);
+            int safeSize = Math.max(size, 1);
+            int fromIndex = Math.min(safePage * safeSize, all.size());
+            int toIndex = Math.min(fromIndex + safeSize, all.size());
+            List<EventListItemResponse> content = all.subList(fromIndex, toIndex);
+            int totalPages = all.isEmpty() ? 0 : (int) Math.ceil((double) all.size() / safeSize);
+
+            return new PageResponse<>(content, safePage, safeSize, all.size(), totalPages);
+        }
+
+        var pageable = PageRequest.of(page, size, resolveSort(sort));
+        var events = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, pageable).map(this::toEventListItem);
+        return PageResponse.from(events);
     }
 
     public List<Event> getPendingEvents() {
@@ -60,17 +110,38 @@ public class EventService {
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
     }
 
+    @Transactional(readOnly = true)
+    public EventDetailResponse getEventDetailById(Long eventId, UUID requesterId) {
+        Event event = getEventById(eventId);
+        boolean isOwner = requesterId != null && requesterId.equals(event.getOrganizerId());
+        if (event.getStatus() != EventStatus.PUBLISHED && !isOwner) {
+            throw new ResourceNotFoundException("Event not found with id: " + eventId);
+        }
+        return toEventDetail(event);
+    }
+
     public Event createEvent(CreateEventRequest request, UUID organizerId) {
+        if (!request.startTime().isBefore(request.endTime())) {
+            throw new IllegalArgumentException("startTime must be before endTime");
+        }
         Event event = Event.builder()
                 .organizerId(organizerId)
                 .title(request.title())
+                .slug(buildSlug(request.title()))
+                .category(request.category())
                 .description(request.description())
                 .venue(request.venue())
                 .city(request.city())
+                .country(request.country())
                 .locationCoords(request.locationCoords())
                 .startTime(request.startTime())
                 .endTime(request.endTime())
                 .bannerUrl(request.bannerUrl())
+                .imageUrl(request.imageUrl())
+                .featured(Boolean.TRUE.equals(request.featured()))
+                .tags(joinTags(request.tags()))
+                .rating(BigDecimal.ZERO)
+                .reviewCount(0L)
                 .status(EventStatus.PENDING)
                 .isPublished(false)
                 .build();
@@ -91,17 +162,39 @@ public class EventService {
         return savedEvent;
     }
 
-    public Event updateEvent(Long eventId, Event eventDetails) {
+    public Event updateEvent(Long eventId, Event eventDetails, UUID requesterId) {
         Event existingEvent = getEventById(eventId);
-        
+        if (!existingEvent.getOrganizerId().equals(requesterId)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN,
+                    "You are not the organizer of this event");
+        }
+        if (eventDetails.getStartTime() != null && eventDetails.getEndTime() != null
+                && !eventDetails.getStartTime().isBefore(eventDetails.getEndTime())) {
+            throw new IllegalArgumentException("startTime must be before endTime");
+        }
+
         existingEvent.setTitle(eventDetails.getTitle());
         existingEvent.setDescription(eventDetails.getDescription());
         existingEvent.setVenue(eventDetails.getVenue());
         existingEvent.setCity(eventDetails.getCity());
+        existingEvent.setCountry(eventDetails.getCountry());
+        existingEvent.setLocationCoords(eventDetails.getLocationCoords());
         existingEvent.setStartTime(eventDetails.getStartTime());
         existingEvent.setEndTime(eventDetails.getEndTime());
+        existingEvent.setBannerUrl(eventDetails.getBannerUrl());
+        existingEvent.setImageUrl(eventDetails.getImageUrl());
+        if (eventDetails.getFeatured() != null) {
+            existingEvent.setFeatured(eventDetails.getFeatured());
+        }
+        if (eventDetails.getTags() != null) {
+            existingEvent.setTags(eventDetails.getTags());
+        }
+        if (eventDetails.getCategory() != null) {
+            existingEvent.setCategory(eventDetails.getCategory());
+        }
         existingEvent.setUpdatedAt(LocalDateTime.now());
-        
+
         Event updatedEvent = eventRepository.save(existingEvent);
         log.info("Updated event with id: {}", updatedEvent.getId());
         return updatedEvent;
@@ -159,8 +252,13 @@ public class EventService {
         return rejectedEvent;
     }
 
-    public void deleteEvent(Long eventId) {
+    public void deleteEvent(Long eventId, UUID requesterId) {
         Event event = getEventById(eventId);
+        if (!event.getOrganizerId().equals(requesterId)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN,
+                    "You are not the organizer of this event");
+        }
         eventRepository.delete(event);
         log.info("Deleted event with id: {}", eventId);
     }
@@ -191,5 +289,175 @@ public class EventService {
 
     public long getTotalTicketsForEvent(Long eventId) {
         return ticketTierRepository.countTotalTicketsByEventId(eventId);
+    }
+
+    private Sort resolveSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return Sort.by(Sort.Direction.ASC, "startTime");
+        }
+        return switch (sort) {
+            case "date_desc" -> Sort.by(Sort.Direction.DESC, "startTime");
+            case "date_asc" -> Sort.by(Sort.Direction.ASC, "startTime");
+            case "rating_desc" -> Sort.by(Sort.Direction.DESC, "rating");
+            default -> Sort.by(Sort.Direction.ASC, "startTime");
+        };
+    }
+
+    private String normalizeFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toLowerCase();
+    }
+
+    private EventListItemResponse toEventListItem(Event event) {
+        Event normalized = normalizeEvent(event);
+        EventPricingMetrics metrics = pricingMetrics(event.getId());
+        return new EventListItemResponse(
+                normalized.getId(),
+                normalized.getTitle(),
+                normalized.getSlug(),
+                normalized.getCategory(),
+                toUtc(normalized.getStartTime()),
+                toUtc(normalized.getEndTime()),
+                normalized.getVenue(),
+                normalized.getCity(),
+                normalized.getCountry(),
+                normalized.getImageUrl(),
+                normalized.getBannerUrl(),
+                metrics.minPrice(),
+                metrics.originalPrice(),
+                normalized.getStatus(),
+                Boolean.TRUE.equals(normalized.getFeatured()),
+                parseTags(normalized.getTags()),
+                Objects.requireNonNullElse(normalized.getRating(), BigDecimal.ZERO),
+                Objects.requireNonNullElse(normalized.getReviewCount(), 0L),
+                metrics.soldCount(),
+                metrics.totalCapacity(),
+                toOrganizer(normalized.getOrganizerId())
+        );
+    }
+
+    private EventDetailResponse toEventDetail(Event event) {
+        Event normalized = normalizeEvent(event);
+        EventPricingMetrics metrics = pricingMetrics(event.getId());
+        return new EventDetailResponse(
+                normalized.getId(),
+                normalized.getTitle(),
+                normalized.getSlug(),
+                normalized.getCategory(),
+                normalized.getDescription(),
+                toUtc(normalized.getStartTime()),
+                toUtc(normalized.getEndTime()),
+                normalized.getVenue(),
+                normalized.getCity(),
+                normalized.getCountry(),
+                normalized.getImageUrl(),
+                normalized.getBannerUrl(),
+                metrics.minPrice(),
+                metrics.originalPrice(),
+                normalized.getStatus(),
+                Boolean.TRUE.equals(normalized.getFeatured()),
+                parseTags(normalized.getTags()),
+                Objects.requireNonNullElse(normalized.getRating(), BigDecimal.ZERO),
+                Objects.requireNonNullElse(normalized.getReviewCount(), 0L),
+                metrics.soldCount(),
+                metrics.totalCapacity(),
+                toOrganizer(normalized.getOrganizerId())
+        );
+    }
+
+    private Event normalizeEvent(Event event) {
+        if (event.getSlug() == null || event.getSlug().isBlank()) {
+            event.setSlug(buildSlug(event.getTitle()));
+        }
+        if (event.getCategory() == null || event.getCategory().isBlank()) {
+            event.setCategory("General");
+        }
+        if (event.getCountry() == null || event.getCountry().isBlank()) {
+            event.setCountry("Vietnam");
+        }
+        if (event.getImageUrl() == null || event.getImageUrl().isBlank()) {
+            event.setImageUrl("https://placehold.co/600x400?text=Event");
+        }
+        if (event.getBannerUrl() == null || event.getBannerUrl().isBlank()) {
+            event.setBannerUrl(event.getImageUrl());
+        }
+        if (event.getTags() == null) {
+            event.setTags("");
+        }
+        if (event.getRating() == null) {
+            event.setRating(BigDecimal.ZERO);
+        }
+        if (event.getReviewCount() == null) {
+            event.setReviewCount(0L);
+        }
+        if (event.getFeatured() == null) {
+            event.setFeatured(false);
+        }
+        return event;
+    }
+
+    private OrganizerSummaryResponse toOrganizer(UUID organizerId) {
+        if (organizerId == null) {
+            return new OrganizerSummaryResponse(null, "Unknown organizer", false);
+        }
+        var user = userRepository.findById(organizerId).orElse(null);
+        if (user == null) {
+            return new OrganizerSummaryResponse(organizerId, "Unknown organizer", false);
+        }
+        return new OrganizerSummaryResponse(
+                organizerId,
+                user.getFullName() != null && !user.getFullName().isBlank() ? user.getFullName() : user.getEmail(),
+                Boolean.TRUE.equals(user.getIsVerified())
+        );
+    }
+
+    private EventPricingMetrics pricingMetrics(Long eventId) {
+        List<TicketTier> tiers = ticketTierRepository.findBySeatMapEventId(eventId);
+        if (tiers.isEmpty()) {
+            return new EventPricingMetrics(BigDecimal.ZERO, BigDecimal.ZERO, 0L, 0L);
+        }
+        BigDecimal minPrice = tiers.stream().map(TicketTier::getPrice).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+        BigDecimal maxPrice = tiers.stream().map(TicketTier::getPrice).max(BigDecimal::compareTo).orElse(minPrice);
+        long totalCapacity = tiers.stream().map(TicketTier::getQuantityTotal).filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
+        long available = tiers.stream().map(TicketTier::getQuantityAvailable).filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
+        long soldCount = Math.max(0, totalCapacity - available);
+        return new EventPricingMetrics(minPrice, maxPrice, soldCount, totalCapacity);
+    }
+
+    private OffsetDateTime toUtc(LocalDateTime localDateTime) {
+        return localDateTime == null ? null : localDateTime.atOffset(ZoneOffset.UTC);
+    }
+
+    private List<String> parseTags(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
+    }
+
+    private String joinTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return null;
+        }
+        return tags.stream().filter(Objects::nonNull).map(String::trim).filter(s -> !s.isBlank()).reduce((a, b) -> a + "," + b).orElse(null);
+    }
+
+    private String buildSlug(String title) {
+        String base = title == null ? "event" : title.trim().toLowerCase()
+                .replaceAll("[^a-z0-9\\s-]", "")
+                .replaceAll("\\s+", "-")
+                .replaceAll("-+", "-");
+        if (base.isBlank()) {
+            base = "event";
+        }
+        return base + "-" + System.currentTimeMillis();
+    }
+
+    private record EventPricingMetrics(BigDecimal minPrice, BigDecimal originalPrice, long soldCount, long totalCapacity) {
     }
 }

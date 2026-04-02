@@ -5,8 +5,10 @@ import java.time.LocalDateTime;
 
 public record CheckoutQuoteResponse(
         BigDecimal subtotal,
+        BigDecimal serviceFee,
         BigDecimal discount,
         BigDecimal total,
+        String currency,
         LocalDateTime expiresAt
 ) {
 }

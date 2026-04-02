@@ -1,18 +1,38 @@
 package demo.ticket_app.repository;
 
-import demo.ticket_app.entity.Event;
-import demo.ticket_app.entity.EventStatus;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
+import demo.ticket_app.entity.Event;
+import demo.ticket_app.entity.EventStatus;
 
 @Repository
 public interface EventRepository extends JpaRepository<Event, Long> {
+
+    @Query("SELECT e FROM Event e WHERE e.status = demo.ticket_app.entity.EventStatus.PUBLISHED " +
+        "AND (:category IS NULL OR LOWER(e.category) = :category) " +
+        "AND (:city IS NULL OR LOWER(e.city) = :city) " +
+        "AND (:featured IS NULL OR e.featured = :featured)")
+    Page<Event> findPublishedEvents(@Param("category") String category,
+                    @Param("city") String city,
+                    @Param("featured") Boolean featured,
+                    Pageable pageable);
+
+    @Query("SELECT e FROM Event e WHERE e.status = demo.ticket_app.entity.EventStatus.PUBLISHED " +
+            "AND (:category IS NULL OR LOWER(e.category) = :category) " +
+            "AND (:city IS NULL OR LOWER(e.city) = :city) " +
+            "AND (:featured IS NULL OR e.featured = :featured)")
+    List<Event> findPublishedEvents(@Param("category") String category,
+                                    @Param("city") String city,
+                                    @Param("featured") Boolean featured);
     
     List<Event> findByOrganizerId(UUID organizerId);
     

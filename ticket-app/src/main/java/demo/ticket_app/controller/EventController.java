@@ -1,19 +1,33 @@
 package demo.ticket_app.controller;
 
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import demo.ticket_app.config.SecurityUtils;
+import demo.ticket_app.dto.common.PageResponse;
 import demo.ticket_app.dto.event.CreateEventRequest;
 import demo.ticket_app.dto.event.DecideEventRequest;
+import demo.ticket_app.dto.event.EventDetailResponse;
+import demo.ticket_app.dto.event.EventListItemResponse;
 import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.EventStatus;
 import demo.ticket_app.service.EventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/events")
@@ -32,9 +46,14 @@ public class EventController {
     }
 
     @GetMapping("/published")
-    public ResponseEntity<List<Event>> getPublishedEvents() {
-        List<Event> events = eventService.getPublishedEvents();
-        return ResponseEntity.ok(events);
+    public ResponseEntity<PageResponse<EventListItemResponse>> getPublishedEvents(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) Boolean featured,
+            @RequestParam(defaultValue = "date_asc") String sort) {
+        return ResponseEntity.ok(eventService.getPublishedEvents(page, size, category, city, featured, sort));
     }
 
     @GetMapping("/pending")
@@ -64,9 +83,17 @@ public class EventController {
     }
 
     @GetMapping("/{eventId}")
-    public ResponseEntity<Event> getEventById(@PathVariable Long eventId) {
-        Event event = eventService.getEventById(eventId);
-        return ResponseEntity.ok(event);
+    public ResponseEntity<EventDetailResponse> getEventById(@PathVariable Long eventId) {
+        UUID requesterId = null;
+        try { requesterId = securityUtils.getCurrentUserId(); } catch (Exception ignored) {}
+        return ResponseEntity.ok(eventService.getEventDetailById(eventId, requesterId));
+    }
+
+    @GetMapping("/categories")
+    public ResponseEntity<Map<String, List<String>>> getEventCategories() {
+        return ResponseEntity.ok(Map.of("categories", List.of(
+                "Concert", "Festival", "Conference", "Comedy", "Sports", "Expo"
+        )));
     }
 
     @PostMapping
@@ -80,7 +107,8 @@ public class EventController {
     public ResponseEntity<Event> updateEvent(
             @PathVariable Long eventId,
             @RequestBody Event eventDetails) {
-        Event updatedEvent = eventService.updateEvent(eventId, eventDetails);
+        UUID requesterId = securityUtils.getCurrentUserId();
+        Event updatedEvent = eventService.updateEvent(eventId, eventDetails, requesterId);
         return ResponseEntity.ok(updatedEvent);
     }
 
@@ -106,7 +134,8 @@ public class EventController {
 
     @DeleteMapping("/{eventId}")
     public ResponseEntity<Void> deleteEvent(@PathVariable Long eventId) {
-        eventService.deleteEvent(eventId);
+        UUID requesterId = securityUtils.getCurrentUserId();
+        eventService.deleteEvent(eventId, requesterId);
         return ResponseEntity.noContent().build();
     }
 

@@ -1,6 +1,7 @@
 package demo.ticket_app.controller;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import demo.ticket_app.config.SecurityUtils;
 import demo.ticket_app.dto.checkout.CheckoutQuoteRequest;
 import demo.ticket_app.dto.checkout.CheckoutQuoteResponse;
 import demo.ticket_app.dto.checkout.CheckoutTierResponse;
@@ -34,6 +36,7 @@ public class CheckoutController {
 
     private final CheckoutService checkoutService;
     private final PaymentService paymentService;
+    private final SecurityUtils securityUtils;
 
     @GetMapping("/events/{eventId}/tiers")
     public ResponseEntity<List<CheckoutTierResponse>> getAvailableTiers(@PathVariable Long eventId) {
@@ -49,7 +52,13 @@ public class CheckoutController {
     public ResponseEntity<CreateCheckoutOrderResponse> createOrder(
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CreateCheckoutOrderRequest request) {
-        return ResponseEntity.ok(checkoutService.createOrder(request));
+        UUID currentUserId = securityUtils.getCurrentUserId();
+        CreateCheckoutOrderRequest sanitizedRequest = new CreateCheckoutOrderRequest(
+            request.eventId(),
+            request.items(),
+            request.voucherCode()
+        );
+        return ResponseEntity.ok(checkoutService.createOrder(sanitizedRequest, currentUserId));
     }
 
     @PostMapping("/orders/{orderId}/payments")

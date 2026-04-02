@@ -1,9 +1,9 @@
 package demo.ticket_app.dto.payment;
 
-import demo.ticket_app.entity.PaymentStatus;
-
 import java.math.BigDecimal;
 import java.util.UUID;
+
+import demo.ticket_app.entity.PaymentStatus;
 
 public record CreatePaymentIntentResponse(
         UUID paymentId,
@@ -13,6 +13,7 @@ public record CreatePaymentIntentResponse(
         BigDecimal platformFeeAmount,
         BigDecimal gatewayFeeAmount,
         BigDecimal organizerNetAmount,
-        String paymentUrl
+        String payUrl,
+        java.time.LocalDateTime expiresAt
 ) {
 }
