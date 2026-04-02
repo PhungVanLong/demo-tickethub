@@ -264,26 +264,33 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
-import { useAuthStore } from '@/stores/auth'
-import { orders }       from '@/data/orders'
+import { ref, computed, reactive, onMounted } from 'vue'
+import { useAuthStore }    from '@/stores/auth.store'
+import { useBookingStore } from '@/stores/booking.store'
 
-const auth = useAuthStore()
+const auth    = useAuthStore()
+const booking = useBookingStore()
 
-const activeTab   = ref('tickets')
+// Fetch real orders on mount (non-blocking; template stays reactive)
+onMounted(() => booking.fetchMyOrders())
+
+// Alias so the template doesn't need changes
+const orders = computed(() => booking.myOrders)
+
+const activeTab     = ref('tickets')
 const selectedOrder = ref(null)
 
 const tabs = computed(() => [
-  { id: 'tickets',  label: 'My Tickets', count: orders.length },
-  { id: 'settings', label: 'Settings'                         },
+  { id: 'tickets',  label: 'My Tickets', count: orders.value.length },
+  { id: 'settings', label: 'Settings'                               },
 ])
 
 const upcomingCount = computed(() =>
-  orders.filter((o) => new Date(o.eventDate) >= new Date() && o.status === 'confirmed').length
+  orders.value.filter((o) => new Date(o.eventDate) >= new Date() && o.status === 'confirmed').length
 )
 
 const totalSpent = computed(() => {
-  const sum = orders.reduce((s, o) => s + (o.status !== 'cancelled' ? o.total : 0), 0)
+  const sum = orders.value.reduce((s, o) => s + (o.status !== 'cancelled' ? (o.total ?? 0) : 0), 0)
   return new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(sum)
 })
 
@@ -311,16 +318,18 @@ function statusLabel(status) {
 }
 
 function formatDate(d) {
+  if (!d) return ''
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 }
 function formatDateTime(d) {
+  if (!d) return ''
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function formatJoinDate(d) {
   return d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : ''
 }
 function formatPrice(val) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
 </script>
 

@@ -145,8 +145,19 @@
       </div>
 
       <!-- Grid -->
+      <div v-if="eventStore.loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div v-for="i in 6" :key="i" class="card animate-pulse">
+          <div class="h-44 bg-zinc-800 rounded-t-2xl" />
+          <div class="p-4 space-y-3">
+            <div class="h-4 bg-zinc-800 rounded w-3/4" />
+            <div class="h-3 bg-zinc-800 rounded w-1/2" />
+            <div class="h-3 bg-zinc-800 rounded w-2/3" />
+          </div>
+        </div>
+      </div>
+
       <div
-        v-if="filteredEvents.length"
+        v-else-if="filteredEvents.length"
         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
       >
         <EventCard v-for="event in filteredEvents" :key="event.id" :event="event" />
@@ -194,27 +205,33 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import EventCard from '@/components/EventCard.vue'
-import { events, categories } from '@/data/events'
+import { useEventStore } from '@/stores/event.store'
+import { categories } from '@/data/events'   // keep static category list
 
+const eventStore     = useEventStore()
 const heroIndex      = ref(0)
 const searchQ        = ref('')
 const activeCategory = ref('all')
 const sortBy         = ref('date')
 const emailSub       = ref('')
 
-const featuredEvents = computed(() => events.filter((e) => e.featured))
+// Fetch from API on mount
+onMounted(() => eventStore.fetchPublished({ size: 100 }))
+
+const featuredEvents = computed(() => eventStore.events.filter((e) => e.featured))
 
 // Auto-advance hero
 let heroTimer = null
 onMounted(() => {
   heroTimer = setInterval(() => {
-    heroIndex.value = (heroIndex.value + 1) % featuredEvents.value.length
+    if (featuredEvents.value.length)
+      heroIndex.value = (heroIndex.value + 1) % featuredEvents.value.length
   }, 5000)
 })
 onUnmounted(() => clearInterval(heroTimer))
 
 const filteredEvents = computed(() => {
-  let list = [...events]
+  let list = [...eventStore.events]
 
   if (activeCategory.value !== 'all') {
     list = list.filter((e) => e.category === activeCategory.value)
@@ -223,15 +240,15 @@ const filteredEvents = computed(() => {
     const q = searchQ.value.toLowerCase()
     list = list.filter(
       (e) =>
-        e.title.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q) ||
-        e.city.toLowerCase().includes(q)
+        (e.title  ?? '').toLowerCase().includes(q) ||
+        (e.venue  ?? '').toLowerCase().includes(q) ||
+        (e.city   ?? '').toLowerCase().includes(q)
     )
   }
 
-  if (sortBy.value === 'price_asc')  list.sort((a, b) => a.price - b.price)
-  if (sortBy.value === 'price_desc') list.sort((a, b) => b.price - a.price)
-  if (sortBy.value === 'rating')     list.sort((a, b) => b.rating - a.rating)
+  if (sortBy.value === 'price_asc')  list.sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
+  if (sortBy.value === 'price_desc') list.sort((a, b) => (b.price ?? 0) - (a.price ?? 0))
+  if (sortBy.value === 'rating')     list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
   if (sortBy.value === 'date')       list.sort((a, b) => new Date(a.date) - new Date(b.date))
 
   return list

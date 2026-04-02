@@ -1,4 +1,5 @@
 <template>
+  <div>
   <!-- Redirect if cart is empty -->
   <div v-if="!cart.event" class="min-h-screen flex items-center justify-center">
     <div class="text-center">
@@ -7,42 +8,8 @@
     </div>
   </div>
 
-  <!-- Success screen -->
-  <Transition name="fade" mode="out-in">
-    <div v-if="success" key="success" class="min-h-screen flex items-center justify-center px-4 animate-slide-up">
-      <div class="max-w-md w-full text-center">
-        <!-- Success animation -->
-        <div class="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center mx-auto mb-6">
-          <svg class="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </div>
-        <h1 class="text-3xl font-black text-white mb-2">Booking Confirmed!</h1>
-        <p class="text-zinc-400 mb-2">Your order <span class="text-white font-semibold">{{ orderId }}</span> has been placed.</p>
-        <p class="text-zinc-500 text-sm mb-8">E-tickets have been sent to <span class="text-violet-400">{{ auth.user?.email }}</span></p>
-
-        <!-- QR placeholder -->
-        <div class="card p-6 mb-6 inline-block">
-          <div class="w-40 h-40 bg-white rounded-xl mx-auto flex items-center justify-center text-zinc-900">
-            <div class="grid grid-cols-5 grid-rows-5 gap-0.5 w-full h-full p-2">
-              <div v-for="i in 25" :key="i"
-                class="rounded-sm"
-                :class="qrPattern[i-1] ? 'bg-zinc-900' : 'bg-white'"
-              />
-            </div>
-          </div>
-          <p class="text-xs text-zinc-500 mt-3 text-center">Scan at venue entrance</p>
-        </div>
-
-        <div class="flex gap-3 justify-center">
-          <RouterLink to="/profile" class="btn-primary">View My Tickets</RouterLink>
-          <RouterLink to="/" class="btn-secondary">Browse More Events</RouterLink>
-        </div>
-      </div>
-    </div>
-
     <!-- Checkout form -->
-    <div v-else-if="cart.event" key="form" class="min-h-screen py-24 animate-fade-in">
+    <div v-if="cart.event" class="min-h-screen py-24 animate-fade-in">
       <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
 
         <h1 class="text-3xl font-black text-white mb-2">Checkout</h1>
@@ -193,6 +160,7 @@
                     <svg v-if="!processing" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                   </button>
                 </div>
+                <p v-if="errors.global" class="text-red-400 text-sm text-center mt-2">{{ errors.global }}</p>
               </div>
             </Transition>
           </div>
@@ -204,25 +172,23 @@
         </div>
       </div>
     </div>
-  </Transition>
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
-import { useRouter }        from 'vue-router'
-import CheckoutSummary      from '@/components/CheckoutSummary.vue'
-import { useCartStore }     from '@/stores/cart'
-import { useAuthStore }     from '@/stores/auth'
+import { ref, reactive } from 'vue'
+import { useRouter }           from 'vue-router'
+import CheckoutSummary         from '@/components/CheckoutSummary.vue'
+import { useBookingStore }     from '@/stores/booking.store'
+import { useAuthStore }        from '@/stores/auth.store'
 
-const cart    = useCartStore()
+const cart    = useBookingStore()
 const auth    = useAuthStore()
 const router  = useRouter()
 
 const steps       = ['Contact', 'Payment', 'Confirm']
 const currentStep = ref(0)
 const processing  = ref(false)
-const success     = ref(false)
-const orderId     = ref('')
 
 const form = reactive({
   firstName:     auth.user?.name?.split(' ')[0] ?? '',
@@ -239,14 +205,11 @@ const form = reactive({
 const errors = reactive({})
 
 const paymentMethods = [
-  { id: 'card',  icon: '💳', name: 'Credit / Debit Card', desc: 'Visa, Mastercard, JCB' },
-  { id: 'momo',  icon: '💜', name: 'MoMo Wallet',         desc: 'Pay with MoMo e-wallet' },
-  { id: 'zalopay', icon: '💙', name: 'ZaloPay',           desc: 'Pay with ZaloPay' },
-  { id: 'bank',  icon: '🏦', name: 'Bank Transfer',        desc: 'Direct bank transfer' },
+  { id: 'card',    icon: '💳', name: 'Credit / Debit Card', desc: 'Visa, Mastercard, JCB' },
+  { id: 'momo',    icon: '💜', name: 'MoMo Wallet',         desc: 'Pay with MoMo e-wallet' },
+  { id: 'zalopay', icon: '💙', name: 'ZaloPay',             desc: 'Pay with ZaloPay' },
+  { id: 'bank',    icon: '🏦', name: 'Bank Transfer',        desc: 'Direct bank transfer' },
 ]
-
-// Random QR-like pattern for the success screen
-const qrPattern = Array.from({ length: 25 }, () => Math.random() > 0.4)
 
 function validateContact() {
   Object.keys(errors).forEach((k) => delete errors[k])
@@ -287,12 +250,33 @@ function formatExpiry(e) {
 async function placeOrder() {
   if (!validatePayment()) return
   processing.value = true
-  // Simulate network delay
-  await new Promise((r) => setTimeout(r, 2000))
-  orderId.value    = `TH-${Date.now().toString().slice(-8)}`
-  processing.value = false
-  success.value    = true
-  cart.clear()
+
+  try {
+    // 1. Create the order
+    const contactInfo = {
+      firstName: form.firstName,
+      lastName:  form.lastName,
+      email:     form.email,
+      phone:     form.phone,
+    }
+    const order = await cart.createOrder(contactInfo)
+    if (!order) throw new Error(cart.error || 'Order creation failed')
+
+    // 2. Create payment intent
+    const orderId = order.orderId ?? order.id
+    const pi = await cart.createPaymentIntent(orderId, form.paymentMethod)
+    if (!pi && cart.error) throw new Error(cart.error)
+
+    const paymentCode = pi?.paymentCode ?? pi?.paymentId ?? `sim-${Date.now()}`
+
+    // 3. Redirect to payment simulation page
+    cart.clear()
+    router.push({ path: `/payment/${paymentCode}`, query: { orderId } })
+  } catch (e) {
+    errors.global = e.message || 'Payment failed. Please try again.'
+  } finally {
+    processing.value = false
+  }
 }
 </script>
 

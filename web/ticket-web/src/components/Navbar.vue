@@ -22,6 +22,14 @@
             Browse Events
           </RouterLink>
           <RouterLink
+            v-if="auth.isOrganizer && !auth.isAdmin"
+            to="/organizer"
+            class="btn-ghost text-sm"
+            active-class="!text-white !bg-zinc-800"
+          >
+            My Events
+          </RouterLink>
+          <RouterLink
             v-if="auth.isAdmin"
             to="/admin"
             class="btn-ghost text-sm"
@@ -100,6 +108,15 @@
                       My Tickets
                     </RouterLink>
                     <RouterLink
+                      v-if="auth.isOrganizer && !auth.isAdmin"
+                      to="/organizer"
+                      class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                      @click="dropdownOpen = false"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      My Events
+                    </RouterLink>
+                    <RouterLink
                       v-if="auth.isAdmin"
                       to="/admin"
                       class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
@@ -133,8 +150,8 @@
 
           <!-- Not logged in -->
           <template v-else>
-            <button class="btn-secondary text-sm py-2 px-4">Sign In</button>
-            <button class="btn-primary text-sm py-2 px-4">Sign Up</button>
+            <RouterLink to="/login"  class="btn-secondary text-sm py-2 px-4">Sign In</RouterLink>
+            <RouterLink to="/register" class="btn-primary text-sm py-2 px-4">Sign Up</RouterLink>
           </template>
 
           <!-- Mobile menu button -->
@@ -163,6 +180,7 @@
         <div v-if="mobileOpen" class="md:hidden border-t border-zinc-800 py-3 space-y-1">
           <RouterLink to="/" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">Browse Events</RouterLink>
           <RouterLink v-if="auth.isLoggedIn" to="/profile" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">My Tickets</RouterLink>
+          <RouterLink v-if="auth.isOrganizer && !auth.isAdmin" to="/organizer" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">My Events</RouterLink>
           <RouterLink v-if="auth.isAdmin" to="/admin" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">Admin Panel</RouterLink>
         </div>
       </Transition>
@@ -230,8 +248,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import { events } from '@/data/events'
+import { useAuthStore } from '@/stores/auth.store'
+import { useEventStore } from '@/stores/event.store'
 
 const auth        = useAuthStore()
 const router      = useRouter()
@@ -243,15 +261,16 @@ const searchQuery = ref('')
 const dropdownRef = ref(null)
 const searchInput = ref(null)
 
+const eventStore    = useEventStore()
 const searchResults = computed(() => {
   if (!searchQuery.value.trim()) return []
   const q = searchQuery.value.toLowerCase()
-  return events.filter(
+  return eventStore.events.filter(
     (e) =>
-      e.title.toLowerCase().includes(q) ||
-      e.venue.toLowerCase().includes(q) ||
-      e.city.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q)
+      (e.title  ?? '').toLowerCase().includes(q) ||
+      (e.venue  ?? '').toLowerCase().includes(q) ||
+      (e.city   ?? '').toLowerCase().includes(q) ||
+      (e.category ?? '').toLowerCase().includes(q)
   ).slice(0, 5)
 })
 

@@ -101,9 +101,9 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useCartStore } from '@/stores/cart'
+import { useBookingStore } from '@/stores/booking.store'
 
-const cart = useCartStore()
+const cart = useBookingStore()
 
 const promoCode   = ref('')
 const promoMsg    = ref('')

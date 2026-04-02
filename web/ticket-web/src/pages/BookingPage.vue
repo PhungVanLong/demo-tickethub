@@ -1,5 +1,13 @@
 <template>
-  <div v-if="event" class="min-h-screen py-24 animate-fade-in">
+  <div>
+  <div v-if="eventStore.loading" class="min-h-screen flex items-center justify-center">
+    <div class="flex flex-col items-center gap-4">
+      <div class="w-12 h-12 rounded-full border-4 border-violet-600 border-t-transparent animate-spin" />
+      <p class="text-zinc-500 text-sm">Loading event…</p>
+    </div>
+  </div>
+
+  <div v-else-if="event" class="min-h-screen py-24 animate-fade-in">
     <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
 
       <!-- Breadcrumb -->
@@ -31,7 +39,7 @@
           <!-- Ticket selector -->
           <div class="card p-5">
             <TicketSelector
-              :ticket-types="event.ticketTypes"
+              :ticket-types="ticketTypes"
               v-model="selections"
             />
           </div>
@@ -125,25 +133,49 @@
   <div v-else class="min-h-screen flex items-center justify-center">
     <p class="text-zinc-400">Event not found. <RouterLink to="/" class="text-violet-400 hover:underline">Go back</RouterLink></p>
   </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRouter }    from 'vue-router'
-import TicketSelector   from '@/components/TicketSelector.vue'
-import { getEventById } from '@/data/events'
-import { useCartStore } from '@/stores/cart'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter }       from 'vue-router'
+import TicketSelector      from '@/components/TicketSelector.vue'
+import { useEventStore }   from '@/stores/event.store'
+import { useBookingStore } from '@/stores/booking.store'
 
 const props  = defineProps({ id: { type: String, required: true } })
 const router = useRouter()
-const cart   = useCartStore()
+const eventStore   = useEventStore()
+const bookingStore = useBookingStore()
 
-const event = computed(() => getEventById(props.id))
+// Fetch event + ticket tiers from API
+onMounted(async () => {
+  await eventStore.fetchById(props.id)
+  if (eventStore.currentEvent) {
+    await eventStore.fetchTicketTiers(props.id)
+    initSelections()
+  }
+})
 
-// Initialise selection array with qty = 0 for each ticket type
-const selections = ref(
-  (event.value?.ticketTypes ?? []).map((t) => ({ ticketType: t, qty: 0 }))
+const event = computed(() => eventStore.currentEvent)
+
+// Ticket types: API tiers > embedded ticketTypes
+const ticketTypes = computed(() =>
+  eventStore.ticketTiers.length
+    ? eventStore.ticketTiers
+    : (event.value?.ticketTypes ?? [])
 )
+
+const selections = ref([])
+
+function initSelections() {
+  selections.value = ticketTypes.value.map((t) => ({ ticketType: t, qty: 0 }))
+}
+
+// Re-init when ticket types load after event
+watch(ticketTypes, (types) => {
+  if (types.length && selections.value.length === 0) initSelections()
+})
 
 const activeSelections = computed(() => selections.value.filter((s) => s.qty > 0))
 const totalTickets     = computed(() => selections.value.reduce((s, t) => s + t.qty, 0))
@@ -152,7 +184,7 @@ const serviceFee       = computed(() => Math.round(subtotal.value * 0.05))
 const grandTotal       = computed(() => subtotal.value + serviceFee.value)
 
 const formattedDate = computed(() =>
-  event.value
+  event.value?.date
     ? new Date(event.value.date).toLocaleDateString('en-US', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
       })
@@ -160,12 +192,14 @@ const formattedDate = computed(() =>
 )
 
 function formatPrice(val) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
 
-function proceedToCheckout() {
+async function proceedToCheckout() {
   if (totalTickets.value === 0) return
-  cart.setBooking(event.value, activeSelections.value)
+  bookingStore.setBooking(event.value, activeSelections.value)
+  // Fire-and-forget quote (no-blocking)
+  bookingStore.fetchQuote()
   router.push('/checkout')
 }
 </script>

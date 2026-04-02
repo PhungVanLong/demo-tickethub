@@ -1,5 +1,13 @@
 <template>
-  <div v-if="event" class="min-h-screen animate-fade-in">
+  <!-- Loading skeleton -->
+  <div v-if="eventStore.loading" class="min-h-screen py-24 flex items-center justify-center">
+    <div class="flex flex-col items-center gap-4">
+      <div class="w-12 h-12 rounded-full border-4 border-violet-600 border-t-transparent animate-spin" />
+      <p class="text-zinc-500 text-sm">Loading event…</p>
+    </div>
+  </div>
+
+  <div v-else-if="event" class="min-h-screen animate-fade-in">
 
     <!-- ===== BANNER ===== -->
     <div class="relative h-72 sm:h-96 lg:h-[480px] overflow-hidden">
@@ -95,7 +103,7 @@
             <h2 class="text-lg font-bold text-white mb-4">Ticket Options</h2>
             <div class="space-y-3">
               <div
-                v-for="t in event.ticketTypes"
+                v-for="t in displayTicketTypes"
                 :key="t.id"
                 class="flex items-center justify-between p-3 rounded-xl bg-zinc-800/50 border border-zinc-700/50"
               >
@@ -199,24 +207,36 @@
   <!-- Not found -->
   <div v-else class="min-h-screen flex items-center justify-center">
     <div class="text-center">
-      <p class="text-zinc-400 text-xl font-semibold">Event not found</p>
-      <RouterLink to="/" class="btn-primary mt-4">Back to Home</RouterLink>
+      <p class="text-zinc-400 text-xl font-semibold mb-2">Event not found</p>
+      <p v-if="eventStore.error" class="text-red-400 text-sm mb-4">{{ eventStore.error }}</p>
+      <RouterLink to="/" class="btn-primary">Back to Home</RouterLink>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getEventById } from '@/data/events'
+import { useEventStore } from '@/stores/event.store'
 
-const props  = defineProps({ id: { type: String, required: true } })
-const router = useRouter()
+const props      = defineProps({ id: { type: String, required: true } })
+const router     = useRouter()
+const eventStore = useEventStore()
 
-const event = computed(() => getEventById(props.id))
+onMounted(async () => {
+  await eventStore.fetchById(props.id)
+  if (eventStore.currentEvent) {
+    eventStore.fetchTicketTiers(props.id)
+  }
+})
+
+// Use currentEvent from store; fall back to null during loading
+const event = computed(() => eventStore.currentEvent)
 
 const soldPct = computed(() =>
-  event.value ? Math.round((event.value.sold / event.value.capacity) * 100) : 0
+  event.value && event.value.capacity
+    ? Math.round((event.value.sold / event.value.capacity) * 100)
+    : 0
 )
 const savePct = computed(() =>
   event.value?.originalPrice
@@ -224,15 +244,20 @@ const savePct = computed(() =>
     : 0
 )
 const formattedDate = computed(() =>
-  event.value
+  event.value?.date
     ? new Date(event.value.date).toLocaleDateString('en-US', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
       })
     : ''
 )
 
+// Ticket types: prefer tiers from API, fall back to embedded ticketTypes
+const displayTicketTypes = computed(() =>
+  eventStore.ticketTiers.length ? eventStore.ticketTiers : (event.value?.ticketTypes ?? [])
+)
+
 function formatPrice(val) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
 
 const shares = [
