@@ -32,10 +32,9 @@ export const bookingService = {
         return res.data
     },
 
-    /** GET /api/orders/user/{userId} or /api/orders */
-    async getMyOrders(userId) {
-        const url = userId ? `/api/orders/user/${userId}` : '/api/orders'
-        const res = await api.get(url)
+    /** GET /api/orders/me */
+    async getMyOrders() {
+        const res = await api.get('/api/orders/me')
         return res.data
     },
 

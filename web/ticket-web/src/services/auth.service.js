@@ -4,7 +4,8 @@ import api from './api'
 export const authService = {
     /**
      * POST /api/auth/login
-     * Expected response: { token, user: { id, name|fullName, email, role, avatar } }
+     * Expected response: { token, user: { id, name|fullName, email, role, avatar }, refreshToken? }
+     * JWT must include: {sub, email, role, exp, iat}
      */
     async login(email, password) {
         const res = await api.post('/api/auth/login', { email, password })
@@ -13,7 +14,7 @@ export const authService = {
 
     /**
      * POST /api/auth/register
-     * Expected response: { token, user: {...} }  OR just the user object
+     * Expected response: { token, user: {...}, refreshToken? }
      */
     async register(data) {
         const res = await api.post('/api/auth/register', data)
@@ -21,10 +22,33 @@ export const authService = {
     },
 
     /**
-     * GET /api/auth/me — returns the authenticated user
+     * POST /api/auth/refresh
+     * Expected response: { token, refreshToken? }
+     * Use to refresh access token before expiration
+     */
+    async refreshToken(refreshToken) {
+        const res = await api.post('/api/auth/refresh', { refreshToken })
+        return res.data
+    },
+
+    /**
+     * POST /api/auth/logout
+     * Invalidates token on backend
+     */
+    async logout() {
+        try {
+            await api.post('/api/auth/logout')
+        } catch (error) {
+            // Ignore logout errors, client-side cleanup still happens
+            console.warn('Logout request failed:', error.message)
+        }
+    },
+
+    /**
+     * GET /api/dashboard — returns authenticated user context + role-aware stats
      */
     async getMe() {
-        const res = await api.get('/api/auth/me')
+        const res = await api.get('/api/dashboard')
         return res.data
     },
 

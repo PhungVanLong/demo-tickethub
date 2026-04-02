@@ -122,6 +122,25 @@ const processing = ref(false)
 const simChoice  = ref(null)
 const errorMsg   = ref('')
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function warmUpIssuedTickets(orderId, attempts = 4, delayMs = 700) {
+  if (!orderId) return
+
+  for (let i = 0; i < attempts; i += 1) {
+    const tickets = await bookingStore.fetchOrderTickets(orderId, true)
+    if (Array.isArray(tickets) && tickets.length > 0) {
+      return
+    }
+
+    if (i < attempts - 1) {
+      await sleep(delayMs)
+    }
+  }
+}
+
 async function simulate(succeed) {
   processing.value = true
   simChoice.value  = succeed ? 'success' : 'failed'
@@ -129,6 +148,8 @@ async function simulate(succeed) {
   try {
     const res = await bookingStore.fakeWebhook(paymentCode, succeed)
     if (succeed) {
+      await bookingStore.fetchMyOrders()
+      await warmUpIssuedTickets(orderId)
       result.value = 'success'
     } else {
       result.value = 'failed'

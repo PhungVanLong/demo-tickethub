@@ -181,6 +181,7 @@ import { useRouter }           from 'vue-router'
 import CheckoutSummary         from '@/components/CheckoutSummary.vue'
 import { useBookingStore }     from '@/stores/booking.store'
 import { useAuthStore }        from '@/stores/auth.store'
+import { extractApiError }     from '@/utils/apiError'
 
 const cart    = useBookingStore()
 const auth    = useAuthStore()
@@ -190,9 +191,18 @@ const steps       = ['Contact', 'Payment', 'Confirm']
 const currentStep = ref(0)
 const processing  = ref(false)
 
+function splitFullName(fullName = '') {
+  const nameParts = String(fullName || '').trim().split(/\s+/).filter(Boolean)
+  return {
+    firstName: nameParts[0] ?? '',
+    lastName: nameParts.slice(1).join(' ') ?? '',
+  }
+}
+
+const nameInfo = splitFullName(auth.user?.name)
 const form = reactive({
-  firstName:     auth.user?.name?.split(' ')[0] ?? '',
-  lastName:      auth.user?.name?.split(' ').slice(1).join(' ') ?? '',
+  firstName:     nameInfo.firstName,
+  lastName:      nameInfo.lastName,
   email:         auth.user?.email ?? '',
   phone:         '',
   paymentMethod: 'card',
@@ -226,7 +236,8 @@ function validatePayment() {
   if (form.paymentMethod !== 'card') return true
   let valid = true
   if (form.cardNumber.replace(/\s/g, '').length < 16) { errors.cardNumber = 'Enter full card number'; valid = false }
-  if (!/^\d{2}\/\d{2}$/.test(form.expiry))            { errors.expiry     = 'MM/YY format required'; valid = false }
+  const expiryValidation = validateExpiry(form.expiry)
+  if (!expiryValidation.valid)                          { errors.expiry     = expiryValidation.message; valid = false }
   if (form.cvv.length < 3)                             { errors.cvv        = 'CVV required'; valid = false }
   return valid
 }
@@ -243,8 +254,36 @@ function formatCardNumber(e) {
 
 function formatExpiry(e) {
   let v = e.target.value.replace(/\D/g, '').slice(0, 4)
+  if (v.length >= 1) {
+    const first = Number(v[0])
+    if (first > 1) v = `0${v}`
+  }
   if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2)
   form.expiry = v
+}
+
+function validateExpiry(value) {
+  if (!/^\d{2}\/\d{2}$/.test(value)) {
+    return { valid: false, message: 'MM/YY format required' }
+  }
+
+  const [monthStr, yearStr] = value.split('/')
+  const month = Number(monthStr)
+  const year = Number(yearStr)
+
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return { valid: false, message: 'Month must be 01-12' }
+  }
+
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear() % 100
+
+  if (year < currentYear || (year === currentYear && month < currentMonth)) {
+    return { valid: false, message: 'Card has expired' }
+  }
+
+  return { valid: true, message: '' }
 }
 
 async function placeOrder() {
@@ -252,14 +291,11 @@ async function placeOrder() {
   processing.value = true
 
   try {
+    // 0. Set purchaser info BEFORE creating order
+    cart.setPurchaserInfo(form)
+    
     // 1. Create the order
-    const contactInfo = {
-      firstName: form.firstName,
-      lastName:  form.lastName,
-      email:     form.email,
-      phone:     form.phone,
-    }
-    const order = await cart.createOrder(contactInfo)
+    const order = await cart.createOrder()
     if (!order) throw new Error(cart.error || 'Order creation failed')
 
     // 2. Create payment intent
@@ -273,7 +309,7 @@ async function placeOrder() {
     cart.clear()
     router.push({ path: `/payment/${paymentCode}`, query: { orderId } })
   } catch (e) {
-    errors.global = e.message || 'Payment failed. Please try again.'
+    errors.global = extractApiError(e, cart.error || 'Payment failed. Please try again.').message
   } finally {
     processing.value = false
   }

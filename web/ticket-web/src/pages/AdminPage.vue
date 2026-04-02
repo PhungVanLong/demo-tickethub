@@ -8,12 +8,6 @@
           <p class="text-xs font-semibold text-violet-400 uppercase tracking-widest mb-1">Admin Panel</p>
           <h1 class="text-3xl font-black text-white">Dashboard</h1>
         </div>
-        <button class="btn-primary" @click="showCreateModal = true">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          Create Event
-        </button>
       </div>
 
       <!-- KPI Cards -->
@@ -56,7 +50,7 @@
           <input v-model="eventSearch" type="text" placeholder="Search events…" class="input-field text-sm py-2.5 max-w-xs" />
           <select v-model="eventStatusFilter" class="input-field text-sm py-2.5 w-44">
             <option value="all">All Status</option>
-            <option value="on_sale">On Sale</option>
+            <option value="published">Published</option>
             <option value="pending">Pending Approval</option>
             <option value="rejected">Rejected</option>
           </select>
@@ -97,23 +91,41 @@
             </div>
           </template>
           <template #cell-status="{ row }">
-            <select
-              v-model="row.status"
-              class="bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 rounded-lg px-2 py-1 focus:outline-none focus:border-violet-500"
-              @change="onEventStatusChange(row)"
-            >
-              <option value="on_sale">On Sale</option>
-              <option value="pending">Pending</option>
-              <option value="rejected">Rejected</option>
-            </select>
+            <span :class="eventBadge(row.status)" class="capitalize">
+              {{ eventStatusLabel(row.status) }}
+            </span>
           </template>
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
-              <button class="btn-ghost py-1 px-2 text-xs" @click="editEvent(row)">
+              <template v-if="String(row.status || '').toLowerCase() === 'pending'">
+                <button 
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="approvePendingEvent(row)"
+                >
+                  Approve
+                </button>
+                <button 
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-red-300 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="rejectPendingEvent(row)"
+                >
+                  Reject
+                </button>
+              </template>
+              <button 
+                :disabled="!hasAdminRole()"
+                class="btn-ghost py-1 px-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="editEvent(row)"
+              >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 Edit
               </button>
-              <button class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors" @click="confirmDelete(row)">
+              <button 
+                :disabled="!hasAdminRole()"
+                class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="confirmDelete(row)"
+              >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               </button>
             </div>
@@ -165,6 +177,10 @@
 
       <!-- TAB: Users -->
       <div v-else-if="activeTab === 'users'" class="space-y-4 animate-fade-in">
+        <div class="bg-blue-500/10 border border-blue-500/30 text-blue-300 rounded-xl px-4 py-3 text-sm">
+          Role approval list only shows accounts that submitted event creation requests and are waiting admin review.
+        </div>
+
         <div class="flex flex-col sm:flex-row gap-3">
           <input
             v-model="userSearch"
@@ -195,33 +211,38 @@
             </div>
             <div class="flex items-center justify-between">
               <span :class="user.active ? 'badge-green' : 'badge-red'">{{ user.active ? 'Active' : 'Disabled' }}</span>
+              <span class="text-xs text-zinc-500">{{ requestCountByUser[user.id] || 0 }} request(s)</span>
               <div class="flex gap-1">
                 <button
                   v-if="user.active"
-                  class="py-1 px-2 rounded-lg text-xs text-amber-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-amber-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Deactivate"
-                  @click="adminStore.deactivateUser(user.id)"
+                  @click="deactivateUser(user.id)"
                 >Deactivate</button>
                 <button
                   v-else
-                  class="py-1 px-2 rounded-lg text-xs text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 transition-colors"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Activate"
-                  @click="adminStore.activateUser(user.id)"
+                  @click="activateUser(user.id)"
                 >Activate</button>
                 <button
                   v-if="user.role === 'CUSTOMER'"
-                  class="py-1 px-2 rounded-lg text-xs text-violet-400 hover:text-violet-300 hover:bg-zinc-800 transition-colors"
-                  @click="adminStore.promoteOrganizer(user.id)"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-violet-400 hover:text-violet-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="promoteOrganizer(user.id)"
                 >→ Organizer</button>
                 <button
                   v-if="user.role === 'ORGANIZER'"
-                  class="py-1 px-2 rounded-lg text-xs text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-                  @click="adminStore.demoteCustomer(user.id)"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="demoteCustomer(user.id)"
                 >→ Customer</button>
               </div>
             </div>
           </div>
-          <div v-if="filteredUsers.length === 0" class="col-span-full text-center text-zinc-500 py-12">No users found</div>
+          <div v-if="filteredUsers.length === 0" class="col-span-full text-center text-zinc-500 py-12">No role-approval accounts found</div>
         </div>
       </div>
       <!-- TAB: Revenue -->
@@ -304,6 +325,54 @@
             </table>
           </div>
         </div>
+
+        <div class="card p-5 space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="font-bold text-white">Organizer Money Management</h3>
+            <span class="text-xs text-zinc-500">All ticket sales deduct 10% platform fee before organizer payout</span>
+          </div>
+
+          <p v-if="adminStore.payoutError" class="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+            {{ adminStore.payoutError }}
+          </p>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div v-for="org in organizerUsers" :key="org.id" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-white">{{ org.name }}</p>
+                  <p class="text-xs text-zinc-500">{{ org.email }}</p>
+                </div>
+                <span class="badge-yellow">ORGANIZER</span>
+              </div>
+
+              <div class="flex gap-2">
+                <button class="btn-secondary text-xs py-2 px-3" :disabled="adminStore.payoutLoading" @click="previewPayout(org.id)">
+                  Preview
+                </button>
+                <button class="btn-primary text-xs py-2 px-3" :disabled="adminStore.payoutLoading" @click="executePayout(org.id)">
+                  Execute Payout
+                </button>
+              </div>
+
+              <div v-if="adminStore.payoutPreviews[org.id]" class="text-xs text-zinc-400 border border-zinc-800 rounded-lg p-3">
+                <p>Pending payments: <span class="text-zinc-200">{{ adminStore.payoutPreviews[org.id].pendingPayments ?? 0 }}</span></p>
+                <p>Total net payout: <span class="text-emerald-400">{{ formatPrice(adminStore.payoutPreviews[org.id].totalNetPayout ?? 0) }}</span></p>
+              </div>
+
+              <div v-if="adminStore.payoutResults[org.id]" class="text-xs text-zinc-400 border border-zinc-800 rounded-lg p-3">
+                <p>Paid payments: <span class="text-zinc-200">{{ adminStore.payoutResults[org.id].paidPayments ?? 0 }}</span></p>
+                <p>Total paid: <span class="text-emerald-400">{{ formatPrice(adminStore.payoutResults[org.id].totalPaid ?? 0) }}</span></p>
+                <p class="text-zinc-500 mt-1">Ref: {{ adminStore.payoutResults[org.id].payoutReference || 'N/A' }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Sales -->
+      <div v-else-if="activeTab === 'sales'" class="space-y-6 animate-fade-in">
+        <PlatformSalesManagement />
       </div>
     </div>
     <Transition name="fade">
@@ -410,11 +479,28 @@
 
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue'
-import AdminTable        from '@/components/AdminTable.vue'
+import AdminTable from '@/components/AdminTable.vue'
+import PlatformSalesManagement from '@/components/PlatformSalesManagement.vue'
 import { useAdminStore } from '@/stores/admin.store'
+import { useAuthStore } from '@/stores/auth.store'
 import { categories }    from '@/data/events'
 
 const adminStore = useAdminStore()
+const auth = useAuthStore()
+
+// Helper to check if current user has ADMIN role from JWT
+function hasAdminRole() {
+  return auth.isAdmin && auth.tokenValidated
+}
+
+// Helper to warn and prevent action if not authorized
+function requireAdminRole(actionName = 'action') {
+  if (!hasAdminRole()) {
+    console.warn(`[Security] Unauthorized ${actionName}: User does not have ADMIN role in JWT`)
+    return false
+  }
+  return true
+}
 
 const activeTab          = ref('events')
 const showCreateModal    = ref(false)
@@ -428,6 +514,20 @@ const userSearch         = ref('')
 const userRoleFilter     = ref('all')
 const revenueFrom        = ref('')
 const revenueTo          = ref('')
+
+function toDateInput(date) {
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const today = new Date()
+const thirtyDaysAgo = new Date(today)
+thirtyDaysAgo.setDate(today.getDate() - 30)
+revenueFrom.value = toDateInput(thirtyDaysAgo)
+revenueTo.value = toDateInput(today)
 
 const eventForm = reactive({
   title: '', category: '', date: '', time: '', price: 0,
@@ -445,27 +545,62 @@ function onUserRoleFilter() {
   adminStore.fetchUsers(userSearch.value || null)
 }
 
+function dateRangeParams() {
+  const fromDate = revenueFrom.value || toDateInput(thirtyDaysAgo)
+  const toDate = revenueTo.value || toDateInput(today)
+  return {
+    from: `${fromDate}T00:00:00`,
+    to: `${toDate}T23:59:59`,
+  }
+}
+
 // Fetch data on mount
 onMounted(async () => {
   await adminStore.fetchPendingEvents()
+  const params = dateRangeParams()
   await Promise.all([
     adminStore.fetchAllEvents(),
     adminStore.fetchPlatformStats(),
     adminStore.fetchUsers(),
     adminStore.fetchAllOrders(),
-    adminStore.fetchRevenueSummary(),
-    adminStore.fetchPayments(),
+    adminStore.fetchRevenueSummary(params),
+    adminStore.fetchPayments(params),
   ])
 })
 
 async function fetchRevenue() {
-  const params = {}
-  if (revenueFrom.value) params.from = revenueFrom.value
-  if (revenueTo.value)   params.to   = revenueTo.value
+  const params = dateRangeParams()
   await Promise.all([
     adminStore.fetchRevenueSummary(params),
     adminStore.fetchPayments(params),
   ])
+}
+
+async function previewPayout(organizerId) {
+  if (!requireAdminRole('payout preview')) return
+  await adminStore.previewOrganizerPayout(organizerId, dateRangeParams())
+}
+
+async function executePayout(organizerId) {
+  if (!requireAdminRole('payout execution')) return
+  const params = dateRangeParams()
+  const payoutRef = `PAYOUT-${new Date().toISOString()
+    .replaceAll('-', '')
+    .replaceAll(':', '')
+    .replaceAll('.', '')
+    .replaceAll('T', '')
+    .replaceAll('Z', '')
+    .slice(0, 14)}`
+  const payload = {
+    from: params.from,
+    to: params.to,
+    payoutReference: payoutRef,
+    note: 'Admin payout execution',
+  }
+  const executed = await adminStore.executeOrganizerPayout(organizerId, payload)
+  if (executed) {
+    await fetchRevenue()
+  }
 }
 
 const adminTabs = [
@@ -473,6 +608,7 @@ const adminTabs = [
   { id: 'orders',  label: 'Orders'  },
   { id: 'users',   label: 'Users'   },
   { id: 'revenue', label: 'Revenue' },
+  { id: 'sales',   label: 'Sales'   },
 ]
 
 const eventColumns = [
@@ -520,10 +656,30 @@ const filteredAdminOrders = computed(() => {
 })
 
 const filteredUsers = computed(() => {
-  let list = adminStore.users
+  const requestedUserIds = new Set(
+    adminStore.pendingEvents
+      .map((e) => String(e.organizerId || e.organizer?.id || ''))
+      .filter(Boolean)
+  )
+
+  let list = adminStore.users.filter((u) => requestedUserIds.has(String(u.id)))
   if (userRoleFilter.value !== 'all') list = list.filter((u) => u.role === userRoleFilter.value)
   return list
 })
+
+const requestCountByUser = computed(() => {
+  const map = {}
+  for (const ev of adminStore.pendingEvents) {
+    const key = String(ev.organizerId || ev.organizer?.id || '')
+    if (!key) continue
+    map[key] = (map[key] || 0) + 1
+  }
+  return map
+})
+
+const organizerUsers = computed(() =>
+  adminStore.users.filter((u) => u.role === 'ORGANIZER')
+)
 
 const kpis = computed(() => [
   {
@@ -560,30 +716,38 @@ const kpis = computed(() => [
 
 const mockUsers = []  // removed — using adminStore.users
 
-async function onEventStatusChange(row) {
-  if (row.status === 'published' || row.status === 'on_sale') {
-    await adminStore.approveEvent(row.id)
-  } else if (row.status === 'rejected') {
-    await adminStore.rejectEvent(row.id)
-  }
+async function approvePendingEvent(row) {
+  if (!requireAdminRole('event approval')) return
+  const ok = await adminStore.approveEvent(row.id)
+  if (ok) row.status = 'published'
+}
+
+async function rejectPendingEvent(row) {
+  if (!requireAdminRole('event rejection')) return
+  const ok = await adminStore.rejectEvent(row.id)
+  if (ok) row.status = 'rejected'
 }
 
 function editEvent(row) {
+  if (!requireAdminRole('event edit')) return
   editingEvent.value  = row
   Object.assign(eventForm, { ...row })
   showCreateModal.value = true
 }
 
 function confirmDelete(row) {
+  if (!requireAdminRole('event deletion')) return
   deleteTarget.value = row
 }
 
 async function deleteEvent() {
+  if (!requireAdminRole('event deletion')) return
   adminStore.deleteLocalEvent(deleteTarget.value.id)
   deleteTarget.value = null
 }
 
 async function saveEvent() {
+  if (!requireAdminRole('event save')) return
   if (editingEvent.value) {
     await adminStore.updateEvent(editingEvent.value.id, { ...eventForm })
   } else {
@@ -592,6 +756,27 @@ async function saveEvent() {
   showCreateModal.value = false
   editingEvent.value    = null
   Object.assign(eventForm, { title: '', category: '', date: '', time: '', price: 0, venue: '', city: '', capacity: 0, description: '', image: '' })
+}
+
+// ─── User Management (JWT-protected) ─────────────────────────────────────
+async function deactivateUser(userId) {
+  if (!requireAdminRole('user deactivation')) return
+  await adminStore.deactivateUser(userId)
+}
+
+async function activateUser(userId) {
+  if (!requireAdminRole('user activation')) return
+  await adminStore.activateUser(userId)
+}
+
+async function promoteOrganizer(userId) {
+  if (!requireAdminRole('user role promotion')) return
+  await adminStore.promoteOrganizer(userId)
+}
+
+async function demoteCustomer(userId) {
+  if (!requireAdminRole('user role demotion')) return
+  await adminStore.demoteCustomer(userId)
 }
 
 function formatDate(d) {
@@ -606,7 +791,33 @@ function formatPrice(val) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
 function orderBadge(status) {
-  return { confirmed: 'badge-green', pending: 'badge-yellow', cancelled: 'badge-red' }[status] ?? 'badge-blue'
+  const key = String(status || '').toLowerCase()
+  return { confirmed: 'badge-green', pending: 'badge-yellow', cancelled: 'badge-red', refunded: 'badge-blue' }[key] ?? 'badge-blue'
+}
+
+function eventBadge(status) {
+  const key = String(status || '').toLowerCase()
+  return {
+    pending: 'badge-yellow',
+    published: 'badge-green',
+    on_sale: 'badge-green',
+    approved: 'badge-green',
+    rejected: 'badge-red',
+    draft: 'badge-blue',
+  }[key] ?? 'badge-blue'
+}
+
+function eventStatusLabel(status) {
+  const key = String(status || '').toLowerCase()
+  const mapped = {
+    pending: 'Pending',
+    published: 'Published',
+    on_sale: 'Published',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    draft: 'Draft',
+  }[key]
+  return mapped || key || 'Unknown'
 }
 </script>
 

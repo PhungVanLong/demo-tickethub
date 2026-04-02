@@ -13,6 +13,7 @@
       <!-- Not found -->
       <div v-else-if="!order" class="text-center py-32">
         <p class="text-zinc-400 text-lg mb-4">Order not found.</p>
+        <p v-if="bookingStore.error" class="text-red-400 text-sm mb-4">{{ bookingStore.error }}</p>
         <RouterLink to="/profile" class="btn-primary">Back to My Tickets</RouterLink>
       </div>
 
@@ -29,7 +30,7 @@
         <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
           <div>
             <h1 class="text-2xl font-black text-white">Order Details</h1>
-            <p class="text-zinc-500 text-sm mt-1 font-mono">{{ order.id }}</p>
+            <p class="text-zinc-500 text-sm mt-1 font-mono">{{ order.orderCode || order.displayId || order.id }}</p>
           </div>
           <span
             class="self-start sm:self-auto text-sm font-semibold px-3 py-1.5 rounded-xl capitalize"
@@ -62,29 +63,50 @@
             <h3 class="font-bold text-white">Tickets</h3>
 
             <div
-              v-for="(ticket, idx) in order.tickets"
-              :key="idx"
+              v-for="ticket in displayTickets"
+              :key="ticket.id || ticket.ticketCode || ticket.type"
               class="card p-5 flex items-start gap-4"
             >
-              <!-- QR Code placeholder -->
-              <div class="w-16 h-16 bg-white rounded-xl shrink-0 flex items-center justify-center">
-                <div class="grid grid-cols-4 grid-rows-4 gap-0.5 w-12 h-12">
-                  <div
-                    v-for="i in 16"
-                    :key="i"
-                    class="rounded-sm"
-                    :class="qrCell(idx, i) ? 'bg-zinc-900' : 'bg-white'"
-                  />
+              <div class="w-28 shrink-0">
+                <TicketQrCode v-if="ticket.qrCodeData" :data="ticket.qrCodeData" :size="160" />
+                <div v-else class="w-16 h-16 bg-white rounded-xl shrink-0 flex items-center justify-center">
+                  <div class="text-[10px] text-zinc-500 text-center px-2">QR pending</div>
                 </div>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="font-semibold text-white">{{ ticket.type }}</p>
-                <p class="text-sm text-zinc-500">Qty: {{ ticket.qty }} · {{ formatPrice(ticket.price) }} each</p>
-                <p class="text-sm font-semibold text-violet-400 mt-1">{{ formatPrice(ticket.price * ticket.qty) }}</p>
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="font-semibold text-white">{{ ticket.tierName || ticket.type }}</p>
+                    <p v-if="ticket.ticketCode" class="text-xs font-mono text-zinc-500 mt-1">{{ ticket.ticketCode }}</p>
+                  </div>
+                  <button
+                    v-if="ticket.id && ticket.qrCodeData"
+                    class="btn-ghost py-1 px-2 text-xs"
+                    @click="downloadTicket(ticket)"
+                  >
+                    Download
+                  </button>
+                </div>
+                <p class="text-sm text-zinc-500 mt-2">
+                  <span v-if="issuedTickets.length">{{ formatPrice(ticket.price) }}</span>
+                  <span v-else>Qty: {{ ticket.qty }} · {{ formatPrice(ticket.price) }} each</span>
+                </p>
+                <p class="text-sm font-semibold text-violet-400 mt-1">
+                  {{ formatPrice(ticket.price * (issuedTickets.length ? 1 : ticket.qty)) }}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span v-if="ticket.seatLabel" class="badge-blue">Seat {{ ticket.seatLabel }}</span>
+                  <span v-if="ticket.status" class="badge-green capitalize">{{ ticket.status }}</span>
+                  <span v-if="ticket.usedAt" class="badge-yellow">Used {{ formatDate(ticket.usedAt) }}</span>
+                </div>
               </div>
             </div>
 
-            <div v-if="!order.tickets?.length" class="card p-6 text-center text-zinc-500 text-sm">
+            <div v-if="ticketsLoading" class="card p-6 text-center text-zinc-500 text-sm">
+              Loading issued tickets…
+            </div>
+
+            <div v-else-if="!displayTickets.length" class="card p-6 text-center text-zinc-500 text-sm">
               No ticket details available
             </div>
           </div>
@@ -149,23 +171,37 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute }        from 'vue-router'
 import { useBookingStore } from '@/stores/booking.store'
+import TicketQrCode from '@/components/TicketQrCode.vue'
+import { downloadTicketQrPng } from '@/utils/ticketQr'
 
 const props        = defineProps({ orderId: { type: String, required: true } })
 const route        = useRoute()
 const bookingStore = useBookingStore()
 
-const order   = ref(null)
-const loading = ref(true)
+const order          = ref(null)
+const issuedTickets  = ref([])
+const loading        = ref(true)
+const ticketsLoading = ref(false)
 
 onMounted(async () => {
   const id = props.orderId || route.params.orderId
   order.value = await bookingStore.fetchOrderById(id)
+
+  const resolvedOrderId = order.value?.orderId || order.value?.id || id
+  ticketsLoading.value = true
+  issuedTickets.value = await bookingStore.fetchOrderTickets(resolvedOrderId, true)
+  ticketsLoading.value = false
   loading.value = false
 })
 
 const subtotal = computed(() =>
-  (order.value?.tickets ?? []).reduce((s, t) => s + t.price * t.qty, 0)
+  displayTickets.value.reduce((sum, ticket) => sum + ticket.price * (issuedTickets.value.length ? 1 : ticket.qty), 0)
 )
+
+const displayTickets = computed(() => {
+  if (issuedTickets.value.length) return issuedTickets.value
+  return order.value?.tickets ?? []
+})
 
 function formatPrice(val) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
@@ -185,14 +221,30 @@ function statusClass(s) {
   }[s] ?? 'bg-zinc-800 text-zinc-400 border border-zinc-700'
 }
 
-function qrCell(ticketIdx, cellIdx) {
-  // Deterministic pseudo-random based on ticket+cell index
-  return ((ticketIdx * 17 + cellIdx * 7) % 3) !== 0
-}
-
 async function cancelOrder() {
   if (!confirm('Cancel this order?')) return
-  await bookingStore.cancelOrder(order.value.id)
-  order.value = { ...order.value, status: 'cancelled' }
+  const routeId = props.orderId || route.params.orderId
+  const ok = await bookingStore.cancelOrder(order.value.orderId || order.value.id || routeId)
+  if (ok) {
+    order.value = { ...order.value, status: 'cancelled' }
+  } else {
+    alert(bookingStore.error || 'Cancel order failed')
+  }
+}
+
+async function downloadTicket(ticket) {
+  const latestTicket = await bookingStore.downloadTicket(ticket.id)
+  const ticketToDownload = latestTicket || ticket
+
+  if (!ticketToDownload?.qrCodeData) {
+    alert(bookingStore.error || 'Ticket QR data is unavailable')
+    return
+  }
+
+  try {
+    await downloadTicketQrPng(ticketToDownload)
+  } catch {
+    alert('Failed to generate ticket QR image')
+  }
 }
 </script>

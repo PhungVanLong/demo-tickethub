@@ -12,6 +12,7 @@ export const useOrganizerStore = defineStore('organizer', () => {
     const formLoading = ref(false)
     const error = ref(null)
     const formError = ref(null)
+    const formWarning = ref(null)
 
     const pendingCount = computed(() =>
         myEvents.value.filter((e) => ['pending', 'draft'].includes(e.status)).length
@@ -54,6 +55,7 @@ export const useOrganizerStore = defineStore('organizer', () => {
     async function createFullEvent({ eventData, seatMapData, tiers = [] }) {
         formLoading.value = true
         formError.value = null
+        formWarning.value = null
         try {
             // 1. Create event
             const event = await eventService.create(eventData)
@@ -62,15 +64,31 @@ export const useOrganizerStore = defineStore('organizer', () => {
             // 2. Create seat map (if provided)
             let seatMapId = null
             if (seatMapData) {
-                const seatMap = await eventService.createSeatMap(eventId, seatMapData)
-                seatMapId = seatMap.id
+                try {
+                    const seatMap = await eventService.createSeatMap(eventId, seatMapData)
+                    seatMapId = seatMap?.id ?? seatMap?.seatMapId ?? null
+                } catch (e) {
+                    if (e?.response?.status === 403) {
+                        formWarning.value = 'Event created, but your role is not allowed to create seat map/ticket tiers.'
+                    } else {
+                        throw e
+                    }
+                }
             }
 
             // 3. Create ticket tiers
             if (seatMapId && tiers.length) {
-                await Promise.all(tiers.map((tier) =>
-                    eventService.createTier(eventId, seatMapId, tier)
-                ))
+                try {
+                    await Promise.all(tiers.map((tier) =>
+                        eventService.createTier(eventId, seatMapId, tier)
+                    ))
+                } catch (e) {
+                    if (e?.response?.status === 403) {
+                        formWarning.value = 'Event created, but your role is not allowed to create ticket tiers.'
+                    } else {
+                        throw e
+                    }
+                }
             }
 
             const norm = normalizeEvent(event)
@@ -78,6 +96,24 @@ export const useOrganizerStore = defineStore('organizer', () => {
             return norm
         } catch (e) {
             formError.value = e.response?.data?.message || 'Failed to create event'
+            return null
+        } finally {
+            formLoading.value = false
+        }
+    }
+
+    async function createOrganizerRequest(eventData) {
+        formLoading.value = true
+        formError.value = null
+        formWarning.value = null
+        try {
+            const event = await eventService.create(eventData)
+            const norm = normalizeEvent(event)
+            myEvents.value.unshift(norm)
+            formWarning.value = 'Request submitted. Admin approval will promote your account to Organizer.'
+            return norm
+        } catch (e) {
+            formError.value = e.response?.data?.message || 'Failed to submit organizer request'
             return null
         } finally {
             formLoading.value = false
@@ -117,11 +153,12 @@ export const useOrganizerStore = defineStore('organizer', () => {
         stats.value = null
         error.value = null
         formError.value = null
+        formWarning.value = null
     }
 
     return {
-        myEvents, stats, loading, formLoading, error, formError,
+        myEvents, stats, loading, formLoading, error, formError, formWarning,
         pendingCount, publishedCount,
-        fetchMyEvents, fetchStats, createFullEvent, updateMyEvent, deleteMyEvent, clear,
+        fetchMyEvents, fetchStats, createFullEvent, createOrganizerRequest, updateMyEvent, deleteMyEvent, clear,
     }
 })

@@ -5,6 +5,60 @@ import { adminService } from '@/services/admin.service'
 import { eventService } from '@/services/event.service'
 import { normalizeEvent } from '@/stores/event.store'
 
+const PLATFORM_FEE_RATE = 0.1
+
+function toMoneyNumber(value) {
+    const num = Number(value)
+    return Number.isFinite(num) ? num : 0
+}
+
+function normalizePayment(payment) {
+    const gross = toMoneyNumber(payment.amount ?? payment.totalAmount ?? payment.grossAmount)
+    const gatewayFee = toMoneyNumber(payment.gatewayFee)
+
+    const feeFromApi = toMoneyNumber(payment.platformFee)
+    const platformFee = feeFromApi > 0 ? feeFromApi : gross * PLATFORM_FEE_RATE
+
+    const netFromApi = toMoneyNumber(payment.organizerNet)
+    const organizerNet = netFromApi > 0
+        ? netFromApi
+        : Math.max(gross - platformFee - gatewayFee, 0)
+
+    return {
+        ...payment,
+        amount: gross,
+        platformFee,
+        gatewayFee,
+        organizerNet,
+    }
+}
+
+function normalizeRevenueSummary(summary) {
+    const base = summary || {}
+    const gross = toMoneyNumber(base.totalGrossRevenue ?? base.gmv)
+    const gatewayFee = toMoneyNumber(base.totalGatewayFee ?? base.gatewayFeeTotal)
+
+    const feeFromApi = toMoneyNumber(base.totalPlatformFee ?? base.platformFeeTotal)
+    const platformFee = feeFromApi > 0 ? feeFromApi : gross * PLATFORM_FEE_RATE
+
+    const netFromApi = toMoneyNumber(base.totalOrganizerNet ?? base.organizerNetTotal)
+    const organizerNet = netFromApi > 0
+        ? netFromApi
+        : Math.max(gross - platformFee - gatewayFee, 0)
+
+    return {
+        ...base,
+        totalGrossRevenue: gross,
+        gmv: gross,
+        totalPlatformFee: platformFee,
+        platformFeeTotal: platformFee,
+        totalGatewayFee: gatewayFee,
+        gatewayFeeTotal: gatewayFee,
+        totalOrganizerNet: organizerNet,
+        organizerNetTotal: organizerNet,
+    }
+}
+
 function normalizeUser(u) {
     return {
         id: u.id,
@@ -26,11 +80,15 @@ export const useAdminStore = defineStore('admin', () => {
     const allOrders = ref([])
     const revenueSummary = ref(null)
     const payments = ref([])
+    const payoutPreviews = ref({})
+    const payoutResults = ref({})
     const platformStats = ref(null)
     const loading = ref(false)
     const usersLoading = ref(false)
     const ordersLoading = ref(false)
     const revenueLoading = ref(false)
+    const payoutLoading = ref(false)
+    const payoutError = ref(null)
     const error = ref(null)
 
     // ── KPIs: first from platformStats, fallback to revenueSummary ─────────────
@@ -94,7 +152,7 @@ export const useAdminStore = defineStore('admin', () => {
         revenueLoading.value = true
         try {
             const data = await adminService.getRevenueSummary(params)
-            revenueSummary.value = data.data ?? data
+            revenueSummary.value = normalizeRevenueSummary(data.data ?? data)
         } catch {
             revenueSummary.value = null
         } finally {
@@ -107,11 +165,47 @@ export const useAdminStore = defineStore('admin', () => {
         try {
             const data = await adminService.getPayments(params)
             const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? [])
-            payments.value = Array.isArray(raw) ? raw : []
+            payments.value = Array.isArray(raw) ? raw.map(normalizePayment) : []
         } catch {
             payments.value = []
         } finally {
             revenueLoading.value = false
+        }
+    }
+
+    async function previewOrganizerPayout(organizerId, params = {}) {
+        payoutLoading.value = true
+        payoutError.value = null
+        try {
+            const data = await adminService.getPayoutPreview(organizerId, params)
+            payoutPreviews.value = {
+                ...payoutPreviews.value,
+                [organizerId]: data.data ?? data,
+            }
+            return payoutPreviews.value[organizerId]
+        } catch (e) {
+            payoutError.value = e.response?.data?.message || 'Failed to preview organizer payout'
+            return null
+        } finally {
+            payoutLoading.value = false
+        }
+    }
+
+    async function executeOrganizerPayout(organizerId, payload) {
+        payoutLoading.value = true
+        payoutError.value = null
+        try {
+            const data = await adminService.executePayout(organizerId, payload)
+            payoutResults.value = {
+                ...payoutResults.value,
+                [organizerId]: data.data ?? data,
+            }
+            return payoutResults.value[organizerId]
+        } catch (e) {
+            payoutError.value = e.response?.data?.message || 'Failed to execute organizer payout'
+            return null
+        } finally {
+            payoutLoading.value = false
         }
     }
 
@@ -210,6 +304,7 @@ export const useAdminStore = defineStore('admin', () => {
             pendingEvents.value = pendingEvents.value.filter((e) => e.id !== id)
             const ev = allEvents.value.find((e) => e.id === id)
             if (ev) ev.status = 'published'
+            await fetchUsers()
             return true
         } catch (e) {
             error.value = e.response?.data?.message || 'Failed to approve event'
@@ -223,6 +318,7 @@ export const useAdminStore = defineStore('admin', () => {
             pendingEvents.value = pendingEvents.value.filter((e) => e.id !== id)
             const ev = allEvents.value.find((e) => e.id === id)
             if (ev) ev.status = 'rejected'
+            await fetchUsers()
             return true
         } catch (e) {
             error.value = e.response?.data?.message || 'Failed to reject event'
@@ -279,11 +375,12 @@ export const useAdminStore = defineStore('admin', () => {
     }
 
     return {
-        pendingEvents, allEvents, users, allOrders, revenueSummary, payments, platformStats,
-        loading, usersLoading, ordersLoading, revenueLoading, error,
+        pendingEvents, allEvents, users, allOrders, revenueSummary, payments, payoutPreviews, payoutResults, platformStats,
+        loading, usersLoading, ordersLoading, revenueLoading, payoutLoading, payoutError, error,
         kpiRevenue, kpiOrders, kpiUsers, kpiTickets,
         fetchPendingEvents, fetchAllEvents, fetchPlatformStats,
         fetchRevenueSummary, fetchPayments,
+        previewOrganizerPayout, executeOrganizerPayout,
         fetchUsers, activateUser, deactivateUser, promoteOrganizer, demoteCustomer, deleteUser,
         fetchAllOrders,
         approveEvent, rejectEvent, createEvent, updateEvent, deleteEvent, deleteLocalEvent,

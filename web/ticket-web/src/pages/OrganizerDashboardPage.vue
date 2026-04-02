@@ -8,7 +8,12 @@
           <h1 class="text-3xl font-black text-white">Organizer Dashboard</h1>
           <p class="text-zinc-500 mt-1">Manage your events and track performance</p>
         </div>
-        <RouterLink to="/organizer/events/create" class="btn-primary">
+        <RouterLink 
+          to="/organizer/events/create" 
+          class="btn-primary"
+          :class="{ 'opacity-50 pointer-events-none': !hasOrganizerRole() }"
+          :title="hasOrganizerRole() ? '' : 'Requires ORGANIZER role from JWT'"
+        >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
           New Event
         </RouterLink>
@@ -57,7 +62,6 @@
             <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
           </svg>
           <p class="text-zinc-500">{{ search ? 'No events match your search' : 'No events yet — create your first one!' }}</p>
-          <RouterLink v-if="!search" to="/organizer/events/create" class="btn-primary mt-4 inline-flex">Create Event</RouterLink>
         </div>
 
         <!-- Table -->
@@ -109,12 +113,14 @@
                     <RouterLink
                       :to="`/organizer/events/${event.id}/edit`"
                       class="btn-ghost py-1 px-2 text-xs"
+                      :class="{ 'opacity-50 pointer-events-none': !hasOrganizerRole() }"
                     >
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       Edit
                     </RouterLink>
                     <button
-                      class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors"
+                      :disabled="!hasOrganizerRole()"
+                      class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       @click="confirmDelete(event)"
                     >
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -125,6 +131,11 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Voucher Management Section -->
+      <div class="mt-16">
+        <OrganizerVoucherManagement />
       </div>
 
       <!-- Delete confirm -->
@@ -158,6 +169,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import OrganizerVoucherManagement from '@/components/OrganizerVoucherManagement.vue'
 import { useAuthStore }      from '@/stores/auth.store'
 import { useOrganizerStore } from '@/stores/organizer.store'
 
@@ -166,6 +178,20 @@ const organizer = useOrganizerStore()
 
 const search      = ref('')
 const deleteTarget = ref(null)
+
+// Helper to check if current user has ORGANIZER role from JWT
+function hasOrganizerRole() {
+  return auth.isOrganizer && auth.tokenValidated
+}
+
+// Helper to warn and prevent action if not authorized
+function requireOrganizerRole(actionName = 'action') {
+  if (!hasOrganizerRole()) {
+    console.warn(`[Security] Unauthorized ${actionName}: User does not have ORGANIZER role in JWT`)
+    return false
+  }
+  return true
+}
 
 onMounted(async () => {
   if (auth.user?.id) {
@@ -198,9 +224,13 @@ function statusBadge(s) {
   }[s] ?? 'badge-blue'
 }
 
-function confirmDelete(event) { deleteTarget.value = event }
+function confirmDelete(event) { 
+  if (!requireOrganizerRole('event deletion')) return
+  deleteTarget.value = event 
+}
 
 async function doDelete() {
+  if (!requireOrganizerRole('event deletion')) return
   await organizer.deleteMyEvent(deleteTarget.value.id)
   deleteTarget.value = null
 }

@@ -15,6 +15,12 @@ export const eventService = {
         return res.data
     },
 
+    /** GET /api/events/categories */
+    async getCategories() {
+        const res = await api.get('/api/events/categories')
+        return res.data
+    },
+
     /** GET /api/events/{id} */
     async getById(id) {
         const res = await api.get(`/api/events/${id}`)
@@ -81,18 +87,46 @@ export const eventService = {
     /** GET /api/events/{eventId}/seat-maps */
     async getSeatMaps(eventId) {
         const res = await api.get(`/api/events/${eventId}/seat-maps`)
-        return res.data
+        return res.data?.data ?? res.data
     },
 
-    /** POST /api/events/{eventId}/seat-maps */
+    /** Backward-compatible helper: returns first seat map when only one is expected */
+    async getSeatMap(eventId) {
+        const data = await this.getSeatMaps(eventId)
+        const raw = Array.isArray(data) ? data : (data?.content ?? data?.data ?? data)
+        return Array.isArray(raw) ? (raw[0] ?? null) : raw
+    },
+
+    /** POST /api/events/{eventId}/seat-maps (multipart/form-data) */
     async createSeatMap(eventId, data) {
-        const res = await api.post(`/api/events/${eventId}/seat-maps`, data)
+        const form = new FormData()
+        form.append('name', (data?.name || 'Main Hall').trim())
+
+        if (data?.file) {
+            form.append('file', data.file)
+        } else if (data?.imageUrl) {
+            form.append('imageUrl', data.imageUrl)
+        }
+
+        const res = await api.post(`/api/events/${eventId}/seat-maps`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        })
         return res.data
     },
 
     /** DELETE /api/events/{eventId}/seat-maps/{seatMapId} */
     async deleteSeatMap(eventId, seatMapId) {
         await api.delete(`/api/events/${eventId}/seat-maps/${seatMapId}`)
+    },
+
+    /** PUT /api/events/{eventId}/seat-maps/{seatMapId}/image (multipart/form-data) */
+    async uploadSeatMapImage(eventId, seatMapId, file) {
+        const form = new FormData()
+        form.append('file', file)
+        const res = await api.put(`/api/events/${eventId}/seat-maps/${seatMapId}/image`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        return res.data
     },
 
     // ── Tier Management (organizer/admin, scoped to seat map) ─────────────────
@@ -111,5 +145,17 @@ export const eventService = {
     /** DELETE /api/events/{eventId}/seat-maps/{seatMapId}/tiers/{tierId} */
     async deleteTier(eventId, seatMapId, tierId) {
         await api.delete(`/api/events/${eventId}/seat-maps/${seatMapId}/tiers/${tierId}`)
+    },
+
+    /** GET /api/events/{eventId}/stats/sold-tickets */
+    async getSoldTicketsStats(eventId) {
+        const res = await api.get(`/api/events/${eventId}/stats/sold-tickets`)
+        return res.data
+    },
+
+    /** GET /api/events/{eventId}/stats/total-tickets */
+    async getTotalTicketsStats(eventId) {
+        const res = await api.get(`/api/events/${eventId}/stats/total-tickets`)
+        return res.data
     },
 }

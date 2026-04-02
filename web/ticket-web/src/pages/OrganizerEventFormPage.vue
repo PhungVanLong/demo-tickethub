@@ -4,12 +4,12 @@
 
       <!-- Header -->
       <div class="flex items-center gap-4 mb-8">
-        <RouterLink to="/organizer" class="btn-ghost p-2">
+        <RouterLink to="/dashboard" class="btn-ghost p-2">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
         </RouterLink>
         <div>
-          <h1 class="text-2xl font-black text-white">{{ isEditing ? 'Edit Event' : 'Create New Event' }}</h1>
-          <p class="text-zinc-500 text-sm mt-0.5">{{ isEditing ? 'Update event details' : 'Fill in details, then add seat map and ticket tiers' }}</p>
+          <h1 class="text-2xl font-black text-white">{{ isEditing ? 'Edit Event' : (canManageSeatMap ? 'Create New Event' : 'Organizer Request Form') }}</h1>
+          <p class="text-zinc-500 text-sm mt-0.5">{{ isEditing ? 'Update event details' : (canManageSeatMap ? 'Fill in details, then add seat map info for review/publishing' : 'Submit request sheet. Admin approval will upgrade your role to Organizer.') }}</p>
         </div>
       </div>
 
@@ -33,6 +33,14 @@
       <!-- Error -->
       <div v-if="organizer.formError" class="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl px-4 py-3 text-sm mb-6">
         {{ organizer.formError }}
+      </div>
+
+      <div v-if="organizer.formWarning" class="bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3 text-sm mb-6">
+        {{ organizer.formWarning }}
+      </div>
+
+      <div v-if="!canManageSeatMap && !isEditing" class="bg-blue-500/10 border border-blue-500/30 text-blue-300 rounded-xl px-4 py-3 text-sm mb-6">
+        Customer account can only submit organizer request sheet. After admin approves your request, your role will become Organizer and you can create full event with seat map/ticket tiers.
       </div>
 
       <!-- STEP 0: Event Details -->
@@ -78,31 +86,62 @@
           </div>
 
           <div>
+            <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Location Coordinates</label>
+            <input v-model="eventForm.locationCoords" type="text" placeholder="10.762622,106.660172" class="input-field" />
+          </div>
+
+          <div>
             <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Banner Image URL</label>
             <input v-model="eventForm.bannerUrl" type="url" placeholder="https://…" class="input-field" />
+            <div v-if="eventForm.bannerUrl" class="mt-2 rounded-xl overflow-hidden border border-zinc-700 bg-zinc-900">
+              <img
+                :src="eventForm.bannerUrl"
+                alt="Banner preview"
+                class="w-full max-h-48 object-cover"
+                @error="$event.target.style.display='none'"
+                @load="$event.target.style.display='block'"
+              />
+            </div>
           </div>
 
           <div class="flex justify-end pt-2">
-            <button class="btn-primary" @click="nextStep(0)">
-              Next: Seat Map
+            <button v-if="!isEditing" class="btn-primary" @click="nextStep(0)">
+              {{ canManageSeatMap ? 'Next: Seat Map' : 'Next: Seat Map Image' }}
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
+            </button>
+            <button
+              v-else
+              class="btn-primary"
+              :class="organizer.formLoading ? 'opacity-70 cursor-wait' : ''"
+              :disabled="organizer.formLoading"
+              @click="submit"
+            >
+              <svg v-if="organizer.formLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              {{ isEditing ? 'Save Changes' : 'Create Event' }}
             </button>
           </div>
         </div>
 
         <!-- STEP 1: Seat Map -->
-        <div v-else-if="currentStep === 1" key="step1" class="card p-6 space-y-5">
+        <div v-else-if="!isEditing && currentStep === 1" key="step1" class="card p-6 space-y-5">
           <div class="flex items-center justify-between">
-            <h2 class="font-bold text-white text-lg">Seat Map</h2>
-            <span class="text-xs text-zinc-500">Optional — skip if not needed</span>
+            <h2 class="font-bold text-white text-lg">{{ canManageSeatMap ? 'Seat Map' : 'Seat Map Image (Organizer Request)' }}</h2>
+            <span class="text-xs text-zinc-500">{{ canManageSeatMap ? 'Optional — skip if not needed' : 'Optional but recommended for event review' }}</span>
           </div>
+
+          <p v-if="!canManageSeatMap" class="text-xs text-zinc-500">
+            This image will be attached to your event request and shown in event detail until full organizer seat map is configured.
+          </p>
 
           <div>
             <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Layout Name</label>
             <input v-model="seatMapForm.name" type="text" placeholder="Main Hall" class="input-field" />
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
+          <div v-if="canManageSeatMap" class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Total Rows</label>
               <input v-model.number="seatMapForm.totalRows" type="number" min="1" placeholder="10" class="input-field" />
@@ -113,16 +152,52 @@
             </div>
           </div>
 
+          <div v-if="canManageSeatMap">
+            <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Seat Map Image File</label>
+            <input type="file" accept="image/*" class="input-field" @change="onSeatMapFileChange" />
+            <p class="text-xs text-zinc-500 mt-1">Upload image directly to backend seatmap API.</p>
+          </div>
+
+          <div v-if="canManageSeatMap">
+            <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Seat Map API Image URL (optional)</label>
+            <input v-model="seatMapForm.apiImageUrl" type="url" placeholder="https://…" class="input-field" />
+          </div>
+
+          <div v-else>
+            <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Seat Map Reference URL (for request)</label>
+            <input v-model="seatMapForm.requestImageUrl" type="url" placeholder="https://…" class="input-field" />
+          </div>
+
           <div>
-            <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Layout Image URL (optional)</label>
-            <input v-model="seatMapForm.imageUrl" type="url" placeholder="https://…" class="input-field" />
+            <div v-if="seatMapPreviewUrl" class="mt-2 rounded-xl overflow-hidden border border-zinc-700 bg-zinc-900">
+              <img
+                :src="seatMapPreviewUrl"
+                alt="Seat map preview"
+                class="w-full max-h-48 object-cover"
+                @error="$event.target.style.display='none'"
+                @load="$event.target.style.display='block'"
+              />
+            </div>
           </div>
 
           <div class="flex justify-between pt-2">
             <button class="btn-secondary" @click="currentStep--">Back</button>
             <div class="flex gap-3">
-              <button class="btn-ghost text-sm" @click="skipSeatMap">Skip</button>
-              <button class="btn-primary" @click="nextStep(1)">
+              <button v-if="canManageSeatMap" class="btn-ghost text-sm" @click="skipSeatMap">Skip</button>
+              <button
+                v-else
+                class="btn-primary"
+                :class="organizer.formLoading ? 'opacity-70 cursor-wait' : ''"
+                :disabled="organizer.formLoading"
+                @click="submit"
+              >
+                <svg v-if="organizer.formLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Submit Request Sheet
+              </button>
+              <button v-if="canManageSeatMap" class="btn-primary" @click="nextStep(1)">
                 Next: Ticket Tiers
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
               </button>
@@ -131,7 +206,7 @@
         </div>
 
         <!-- STEP 2: Ticket Tiers -->
-        <div v-else-if="currentStep === 2" key="step2" class="space-y-4">
+        <div v-else-if="!isEditing && canManageSeatMap && currentStep === 2" key="step2" class="space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="font-bold text-white text-lg">Ticket Tiers</h2>
             <button class="btn-ghost text-sm" @click="addTier">
@@ -211,10 +286,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore }        from '@/stores/auth.store'
 import { useOrganizerStore }   from '@/stores/organizer.store'
+import { embedSeatMapImageInDescription } from '@/utils/seatMapImage'
 
 const router    = useRouter()
 const route     = useRoute()
@@ -224,7 +300,13 @@ const organizer = useOrganizerStore()
 const eventId   = route.params.id
 const isEditing = !!eventId
 
-const steps = ['Event Details', 'Seat Map', 'Ticket Tiers']
+const canManageSeatMap = computed(() => auth.isOrganizer || auth.isAdmin)
+const steps = computed(() => {
+  if (isEditing) return ['Event Details']
+  return canManageSeatMap.value
+    ? ['Event Details', 'Seat Map', 'Ticket Tiers']
+    : ['Event Details', 'Seat Map Image']
+})
 const currentStep = ref(0)
 const formErrors  = reactive({})
 const includeSeatMap = ref(true)
@@ -234,6 +316,7 @@ const eventForm = reactive({
   description: '',
   venue:       '',
   city:        '',
+  locationCoords: '',
   startTime:   '',
   endTime:     '',
   bannerUrl:   '',
@@ -243,8 +326,37 @@ const seatMapForm = reactive({
   name:       'Main Hall',
   totalRows:  10,
   totalCols:  20,
-  imageUrl:   '',
+  apiImageUrl: '',
+  requestImageUrl: '',
+  file:       null,
   layoutJson: '',
+})
+
+const filePreviewUrl = ref('')
+const seatMapPreviewUrl = computed(() => {
+  if (filePreviewUrl.value) return filePreviewUrl.value
+  return canManageSeatMap.value ? seatMapForm.apiImageUrl : seatMapForm.requestImageUrl
+})
+
+function onSeatMapFileChange(event) {
+  const file = event?.target?.files?.[0] || null
+  seatMapForm.file = file
+}
+
+watch(() => seatMapForm.file, (newFile, oldFile) => {
+  if (filePreviewUrl.value) {
+    URL.revokeObjectURL(filePreviewUrl.value)
+    filePreviewUrl.value = ''
+  }
+  if (newFile) {
+    filePreviewUrl.value = URL.createObjectURL(newFile)
+  }
+})
+
+onUnmounted(() => {
+  if (filePreviewUrl.value) {
+    URL.revokeObjectURL(filePreviewUrl.value)
+  }
 })
 
 const tiers = ref([{
@@ -268,6 +380,7 @@ onMounted(async () => {
         description: ev.description,
         venue:       ev.venue,
         city:        ev.city,
+        locationCoords: ev.locationCoords || '',
         startTime:   ev.date || '',
         endTime:     '',
         bannerUrl:   ev.banner || ev.image || '',
@@ -289,7 +402,9 @@ function nextStep(step) {
     if (!eventForm.city.trim())      { formErrors.city = 'Required'; ok = false }
     if (!ok) return
   }
-  currentStep.value++
+  if (currentStep.value < steps.value.length - 1) {
+    currentStep.value++
+  }
 }
 
 function skipSeatMap() {
@@ -306,47 +421,55 @@ function addTier() {
 
 async function submit() {
   const validTiers = tiers.value.filter((t) => t.name.trim() && t.quantityTotal > 0)
+  const finalDescription = (!isEditing && !canManageSeatMap.value)
+    ? embedSeatMapImageInDescription(eventForm.description, seatMapForm.requestImageUrl)
+    : eventForm.description
 
   if (isEditing) {
     const result = await organizer.updateMyEvent(eventId, {
       title: eventForm.title,
-      description: eventForm.description,
+      description: finalDescription,
       venue: eventForm.venue,
       city: eventForm.city,
+      locationCoords: eventForm.locationCoords || null,
       startTime: eventForm.startTime,
       endTime: eventForm.endTime,
       bannerUrl: eventForm.bannerUrl,
     })
-    if (result) router.push('/organizer')
+    if (result) router.push('/dashboard')
   } else {
-    const result = await organizer.createFullEvent({
-      eventData: {
-        title:       eventForm.title,
-        description: eventForm.description,
-        venue:       eventForm.venue,
-        city:        eventForm.city,
-        startTime:   eventForm.startTime,
-        endTime:     eventForm.endTime,
-        bannerUrl:   eventForm.bannerUrl,
-      },
-      seatMapData: includeSeatMap.value && seatMapForm.name ? {
-        name:       seatMapForm.name,
-        totalRows:  seatMapForm.totalRows,
-        totalCols:  seatMapForm.totalCols,
-        imageUrl:   seatMapForm.imageUrl || null,
-        layoutJson: seatMapForm.layoutJson || null,
-      } : null,
-      tiers: validTiers.map((t) => ({
-        name:          t.name,
-        tierType:      t.tierType,
-        price:         t.price,
-        quantityTotal: t.quantityTotal,
-        colorCode:     t.colorCode,
-        saleStart:     t.saleStart || null,
-        saleEnd:       t.saleEnd || null,
-      })),
-    })
-    if (result) router.push('/organizer')
+    const eventData = {
+      title:       eventForm.title,
+      description: finalDescription,
+      venue:       eventForm.venue,
+      city:        eventForm.city,
+      locationCoords: eventForm.locationCoords || null,
+      startTime:   eventForm.startTime,
+      endTime:     eventForm.endTime,
+      bannerUrl:   eventForm.bannerUrl,
+    }
+
+    const result = canManageSeatMap.value
+      ? await organizer.createFullEvent({
+          eventData,
+          seatMapData: includeSeatMap.value && seatMapForm.name ? {
+            name:       seatMapForm.name,
+            file:       seatMapForm.file || null,
+            imageUrl:   seatMapForm.apiImageUrl || null,
+          } : null,
+          tiers: validTiers.map((t) => ({
+            name:          t.name,
+            tierType:      t.tierType,
+            price:         t.price,
+            quantityTotal: t.quantityTotal,
+            colorCode:     t.colorCode,
+            saleStart:     t.saleStart || null,
+            saleEnd:       t.saleEnd || null,
+          })),
+        })
+      : await organizer.createOrganizerRequest(eventData)
+
+    if (result) router.push('/dashboard')
   }
 }
 </script>
