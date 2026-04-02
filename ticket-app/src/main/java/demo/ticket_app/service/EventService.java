@@ -26,6 +26,7 @@ import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.EventApproval;
 import demo.ticket_app.entity.EventStatus;
 import demo.ticket_app.entity.TicketTier;
+import demo.ticket_app.entity.UserRole;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.EventApprovalRepository;
 import demo.ticket_app.repository.EventRepository;
@@ -164,10 +165,10 @@ public class EventService {
 
     public Event updateEvent(Long eventId, Event eventDetails, UUID requesterId) {
         Event existingEvent = getEventById(eventId);
-        if (!existingEvent.getOrganizerId().equals(requesterId)) {
+        if (!canManageEvent(existingEvent, requesterId)) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.FORBIDDEN,
-                    "You are not the organizer of this event");
+                    "You do not have permission to update this event");
         }
         if (eventDetails.getStartTime() != null && eventDetails.getEndTime() != null
                 && !eventDetails.getStartTime().isBefore(eventDetails.getEndTime())) {
@@ -254,13 +255,25 @@ public class EventService {
 
     public void deleteEvent(Long eventId, UUID requesterId) {
         Event event = getEventById(eventId);
-        if (!event.getOrganizerId().equals(requesterId)) {
+        if (!canManageEvent(event, requesterId)) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.FORBIDDEN,
-                    "You are not the organizer of this event");
+                    "You do not have permission to delete this event");
         }
         eventRepository.delete(event);
         log.info("Deleted event with id: {}", eventId);
+    }
+
+    private boolean canManageEvent(Event event, UUID requesterId) {
+        if (requesterId == null) {
+            return false;
+        }
+        if (event.getOrganizerId().equals(requesterId)) {
+            return true;
+        }
+        return userRepository.findById(requesterId)
+                .map(user -> user.getRole() == UserRole.ADMIN)
+                .orElse(false);
     }
 
     public List<Event> searchEvents(String searchTerm) {

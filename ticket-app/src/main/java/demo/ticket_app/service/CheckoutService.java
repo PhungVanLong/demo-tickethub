@@ -35,7 +35,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CheckoutService {
 
-    private static final int HOLD_MINUTES = 15;
     private static final BigDecimal SERVICE_FEE_RATE = new BigDecimal("0.05");
 
     private final EventRepository eventRepository;
@@ -60,7 +59,7 @@ public class CheckoutService {
 
     @Transactional(readOnly = true)
     public CheckoutQuoteResponse quote(CheckoutQuoteRequest request) {
-        validateEventIsPublished(request.eventId());
+        Event event = validateEventIsPublished(request.eventId());
         PricingResult pricingResult = calculatePricing(
                 request.eventId(),
                 request.items(),
@@ -72,8 +71,8 @@ public class CheckoutService {
             pricingResult.serviceFee(),
                 pricingResult.discount(),
                 pricingResult.total(),
-            "VND",
-                LocalDateTime.now().plusMinutes(HOLD_MINUTES)
+                "VND",
+                event.getEndTime()
         );
     }
 

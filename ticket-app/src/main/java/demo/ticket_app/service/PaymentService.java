@@ -23,6 +23,7 @@ import demo.ticket_app.dto.payment.CreatePaymentIntentResponse;
 import demo.ticket_app.dto.payment.FakePaymentWebhookRequest;
 import demo.ticket_app.dto.payment.FakePaymentWebhookResponse;
 import demo.ticket_app.entity.Order;
+import demo.ticket_app.entity.Ticket;
 import demo.ticket_app.entity.OrderItem;
 import demo.ticket_app.entity.OrderStatus;
 import demo.ticket_app.entity.Payment;
@@ -38,9 +39,11 @@ import demo.ticket_app.repository.PaymentRepository;
 import demo.ticket_app.repository.SeatMapRepository;
 import demo.ticket_app.repository.TicketTierRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional
 public class PaymentService {
 
@@ -56,6 +59,7 @@ public class PaymentService {
     private final TicketTierRepository ticketTierRepository;
     private final SeatMapRepository seatMapRepository;
     private final EventRepository eventRepository;
+    private final TicketService ticketService;
 
     public CreatePaymentIntentResponse createPaymentIntent(UUID orderId, CreatePaymentIntentRequest request) {
         Order order = orderRepository.findById(orderId)
@@ -67,6 +71,7 @@ public class PaymentService {
 
         FeeBreakdown fee = calculateFee(order.getFinalAmount());
         UUID organizerId = resolveOrganizerId(orderId);
+        LocalDateTime expiresAt = resolveEventEndTime(orderId);
 
         Payment payment = Payment.builder()
                 .orderId(orderId)
@@ -92,8 +97,8 @@ public class PaymentService {
                 saved.getPlatformFeeAmount(),
                 saved.getGatewayFeeAmount(),
                 saved.getOrganizerNetAmount(),
-            paymentUrl,
-            LocalDateTime.now().plusMinutes(15)
+                paymentUrl,
+                expiresAt
         );
     }
 
@@ -112,6 +117,10 @@ public class PaymentService {
 
             order.setOrderStatus(OrderStatus.CONFIRMED);
             order.setUpdatedAt(LocalDateTime.now());
+            
+            // Create tickets for confirmed order
+            List<Ticket> createdTickets = ticketService.createTicketsForOrder(payment.getOrderId());
+            log.info("Payment success: {} tickets created for order {}", createdTickets.size(), payment.getOrderId());
         } else {
             payment.setPaymentStatus(PaymentStatus.FAILED);
             payment.setGatewayResponse(request.message() != null ? request.message() : "Payment failed from fake provider");
@@ -267,6 +276,38 @@ public class PaymentService {
         }
 
         return organizerId;
+    }
+
+    private LocalDateTime resolveEventEndTime(UUID orderId) {
+        List<OrderItem> items = orderItemRepository.findByOrderId(orderId);
+        if (items.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order has no items");
+        }
+
+        Long eventId = null;
+        LocalDateTime endTime = null;
+
+        for (OrderItem item : items) {
+            TicketTier tier = ticketTierRepository.findById(item.getTicketTierId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ticket tier not found with id: " + item.getTicketTierId()));
+            SeatMap seatMap = seatMapRepository.findById(tier.getSeatMapId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Seat map not found with id: " + tier.getSeatMapId()));
+            var event = eventRepository.findById(seatMap.getEventId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + seatMap.getEventId()));
+
+            if (eventId == null) {
+                eventId = event.getId();
+                endTime = event.getEndTime();
+            } else if (!eventId.equals(event.getId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order contains items from multiple events");
+            }
+        }
+
+        if (endTime == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Event end time is missing");
+        }
+
+        return endTime;
     }
 
     private record FeeBreakdown(BigDecimal platformFeeAmount, BigDecimal gatewayFeeAmount, BigDecimal organizerNetAmount) {

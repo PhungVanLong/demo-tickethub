@@ -30,6 +30,10 @@ public class Voucher {
     private String code;
     
     @Enumerated(EnumType.STRING)
+    @Column(name = "voucher_type", nullable = false)
+    private VoucherType voucherType;
+    
+    @Enumerated(EnumType.STRING)
     @Column(name = "discount_type", nullable = false)
     private DiscountType discountType;
     
@@ -55,12 +59,29 @@ public class Voucher {
     @Column(name = "apply_on", nullable = false)
     private VoucherApplyOn applyOn;
     
+    @Column(name = "event_id")
+    private Long eventId;
+    
+    @Column(name = "assigned_to_user")
+    private UUID assignedToUser;
+    
+    @Column(name = "created_by", nullable = false)
+    private UUID createdBy;
+    
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
     
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "organizer_id", insertable = false, updatable = false)
     private User organizer;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "event_id", insertable = false, updatable = false)
+    private Event event;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_to_user", insertable = false, updatable = false)
+    private User assignedUser;
     
     @OneToMany(mappedBy = "voucher", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<VoucherUsage> voucherUsages;

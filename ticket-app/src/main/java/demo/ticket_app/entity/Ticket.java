@@ -10,6 +10,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "tickets")
@@ -26,11 +27,11 @@ public class Ticket {
     @Column(name = "order_item_id", nullable = false)
     private UUID orderItemId;
     
-    @Column(name = "ticket_code", nullable = false, unique = true, length = 50)
+    @Column(name = "ticket_code", nullable = false, unique = true, length = 100)
     private String ticketCode;
     
-    @Column(name = "qr_code", length = 255)
-    private String qrCode;
+    @Column(name = "qr_code_data", length = 500)
+    private String qrCodeData;
     
     @Enumerated(EnumType.STRING)
     @Column(name = "ticket_status", nullable = false)
@@ -68,6 +69,7 @@ public class Ticket {
     }
     
     private String generateTicketCode() {
-        return "TCK" + System.currentTimeMillis();
+        // Generate unique ticket code: TCK_{UUID}
+        return "TCK_" + UUID.randomUUID().toString();
     }
 }
