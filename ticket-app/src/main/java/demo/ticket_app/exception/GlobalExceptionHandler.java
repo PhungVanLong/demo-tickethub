@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -48,6 +49,13 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                                 .body(ErrorResponse.of(400, "VALIDATION_ERROR", "Validation failed", errors, request.getRequestURI()));
     }
+
+        @ExceptionHandler(HttpMessageNotReadableException.class)
+                public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
+                return ResponseEntity
+                                .status(HttpStatus.BAD_REQUEST)
+                                                                .body(ErrorResponse.of(400, "VALIDATION_ERROR", "Invalid request payload", List.of(), request.getRequestURI()));
+        }
 
     @ExceptionHandler(IllegalArgumentException.class)
         public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {

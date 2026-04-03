@@ -1,17 +1,27 @@
 package demo.ticket_app.controller;
 
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import demo.ticket_app.config.SecurityUtils;
 import demo.ticket_app.dto.voucher.CreateOrganizerVoucherRequest;
 import demo.ticket_app.dto.voucher.CreateVoucherResponse;
-import demo.ticket_app.entity.Voucher;
+import demo.ticket_app.dto.voucher.ValidateVoucherRequest;
+import demo.ticket_app.dto.voucher.ValidateVoucherResponse;
+import demo.ticket_app.dto.voucher.VoucherResponse;
 import demo.ticket_app.service.VoucherService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/vouchers")
@@ -26,9 +36,11 @@ public class VoucherController {
      * Get my available vouchers (user only)
      */
     @GetMapping("/me")
-    public ResponseEntity<List<Voucher>> getMyVouchers() {
+    public ResponseEntity<List<VoucherResponse>> getMyVouchers() {
         UUID userId = securityUtils.getCurrentUserId();
-        List<Voucher> vouchers = voucherService.getUserVouchers(userId);
+        List<VoucherResponse> vouchers = voucherService.getUserVouchers(userId).stream()
+                .map(VoucherResponse::from)
+                .collect(Collectors.toList());
         return ResponseEntity.ok(vouchers);
     }
 
@@ -45,12 +57,30 @@ public class VoucherController {
     }
 
     /**
+     * Validate voucher code for current user during checkout.
+     */
+    @PostMapping("/validate")
+    public ResponseEntity<ValidateVoucherResponse> validateVoucher(
+            @Valid @RequestBody ValidateVoucherRequest request) {
+        UUID userId = securityUtils.getCurrentUserId();
+        ValidateVoucherResponse response = voucherService.validateVoucher(
+                request.code(),
+                request.eventId(),
+                request.orderAmount(),
+                userId
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Get organization's event vouchers (organizer only)
      */
     @GetMapping("/organizer")
-    public ResponseEntity<List<Voucher>> getOrganizerVouchers() {
+    public ResponseEntity<List<VoucherResponse>> getOrganizerVouchers() {
         UUID organizerId = securityUtils.getCurrentUserId();
-        List<Voucher> vouchers = voucherService.getOrganizerEventVouchers(organizerId);
+        List<VoucherResponse> vouchers = voucherService.getOrganizerEventVouchers(organizerId).stream()
+                .map(VoucherResponse::from)
+                .collect(Collectors.toList());
         return ResponseEntity.ok(vouchers);
     }
 }

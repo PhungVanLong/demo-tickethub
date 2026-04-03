@@ -78,6 +78,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/events/*/seat-maps/**").hasAnyRole("ORGANIZER", "ADMIN")
                 // Vouchers
                 .requestMatchers(HttpMethod.GET, "/api/vouchers/me").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/vouchers/validate").authenticated()
                 .requestMatchers(HttpMethod.POST, "/api/vouchers/events/**").hasAnyRole("ORGANIZER", "ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/vouchers/organizer").hasAnyRole("ORGANIZER", "ADMIN")
                 // Tickets

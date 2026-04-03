@@ -1,21 +1,35 @@
 package demo.ticket_app.service;
 
-import demo.ticket_app.dto.voucher.CreateOrganizerVoucherRequest;
-import demo.ticket_app.dto.voucher.CreateVoucherResponse;
-import demo.ticket_app.entity.*;
-import demo.ticket_app.exception.ResourceNotFoundException;
-import demo.ticket_app.repository.*;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
+import demo.ticket_app.dto.voucher.CreateOrganizerVoucherRequest;
+import demo.ticket_app.dto.voucher.CreateVoucherResponse;
+import demo.ticket_app.dto.voucher.ValidateVoucherResponse;
+import demo.ticket_app.entity.DiscountType;
+import demo.ticket_app.entity.Event;
+import demo.ticket_app.entity.EventStatus;
+import demo.ticket_app.entity.UserRole;
+import demo.ticket_app.entity.Voucher;
+import demo.ticket_app.entity.VoucherApplyOn;
+import demo.ticket_app.entity.VoucherType;
+import demo.ticket_app.exception.ResourceNotFoundException;
+import demo.ticket_app.repository.EventRepository;
+import demo.ticket_app.repository.MonthlyVoucherAllocationRepository;
+import demo.ticket_app.repository.TicketTierRepository;
+import demo.ticket_app.repository.UserRepository;
+import demo.ticket_app.repository.VoucherRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +54,7 @@ public class VoucherService {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         
-        if (!event.getOrganizerId().equals(organizerId)) {
+        if (!canManageEventVoucher(event, organizerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the organizer of this event");
         }
         
@@ -109,6 +123,73 @@ public class VoucherService {
     }
 
     /**
+     * Validate a voucher for the current user and checkout context.
+     */
+    @Transactional(readOnly = true)
+    public ValidateVoucherResponse validateVoucher(String code, Long eventId, BigDecimal orderAmount, UUID userId) {
+        Optional<Voucher> voucherOptional = voucherRepository.findActiveVoucherByCode(code, LocalDateTime.now());
+        if (voucherOptional.isEmpty()) {
+            return new ValidateVoucherResponse(
+                    false,
+                    "Voucher is invalid or expired",
+                    null,
+                    code,
+                    null,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    null,
+                    null,
+                    eventId,
+                    null
+            );
+        }
+
+        Voucher voucher = voucherOptional.get();
+
+        if (voucher.getUsageLimit() != null && voucher.getUsedCount() != null && voucher.getUsedCount() >= voucher.getUsageLimit()) {
+            return invalidVoucher(voucher, eventId, "Voucher usage limit reached");
+        }
+
+        if (voucher.getAssignedToUser() != null && !voucher.getAssignedToUser().equals(userId)) {
+            return invalidVoucher(voucher, eventId, "Voucher does not belong to this user");
+        }
+
+        if (voucher.getApplyOn() == VoucherApplyOn.SPECIFIC_EVENT) {
+            if (eventId == null) {
+                return invalidVoucher(voucher, null, "Event id is required for this voucher");
+            }
+            if (voucher.getEventId() != null && !voucher.getEventId().equals(eventId)) {
+                return invalidVoucher(voucher, eventId, "Voucher is not applicable for this event");
+            }
+        }
+
+        if (voucher.getMinOrderValue() != null && orderAmount != null && orderAmount.compareTo(voucher.getMinOrderValue()) < 0) {
+            return invalidVoucher(voucher, eventId, "Order does not meet voucher minimum value");
+        }
+
+        BigDecimal calculatedDiscount = BigDecimal.ZERO;
+        if (orderAmount != null) {
+            calculatedDiscount = calculateDiscountAmount(voucher, orderAmount);
+        }
+
+        return new ValidateVoucherResponse(
+                true,
+                "Voucher is valid",
+                voucher.getId(),
+                voucher.getCode(),
+                voucher.getVoucherType(),
+                voucher.getDiscountType(),
+                voucher.getDiscountValue(),
+                calculatedDiscount,
+                voucher.getMinOrderValue(),
+                voucher.getApplyOn(),
+                voucher.getEventId(),
+                voucher.getValidUntil()
+        );
+    }
+
+    /**
      * Disable expired vouchers
      */
     @Transactional
@@ -128,5 +209,41 @@ public class VoucherService {
 
     private String generateVoucherCode() {
         return "VOC-" + System.currentTimeMillis();
+    }
+
+    private boolean canManageEventVoucher(Event event, UUID userId) {
+        if (event.getOrganizerId().equals(userId)) {
+            return true;
+        }
+
+        return userRepository.findById(userId)
+                .map(user -> user.getRole() == UserRole.ADMIN)
+                .orElse(false);
+    }
+
+    private ValidateVoucherResponse invalidVoucher(Voucher voucher, Long eventId, String message) {
+        return new ValidateVoucherResponse(
+                false,
+                message,
+                voucher.getId(),
+                voucher.getCode(),
+                voucher.getVoucherType(),
+                voucher.getDiscountType(),
+                voucher.getDiscountValue(),
+                BigDecimal.ZERO,
+                voucher.getMinOrderValue(),
+                voucher.getApplyOn(),
+                voucher.getEventId() != null ? voucher.getEventId() : eventId,
+                voucher.getValidUntil()
+        );
+    }
+
+    private BigDecimal calculateDiscountAmount(Voucher voucher, BigDecimal orderAmount) {
+        if (voucher.getDiscountType() == DiscountType.PERCENTAGE) {
+            return orderAmount
+                    .multiply(voucher.getDiscountValue())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        }
+        return voucher.getDiscountValue().min(orderAmount);
     }
 }
