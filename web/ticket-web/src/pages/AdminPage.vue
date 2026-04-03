@@ -8,12 +8,6 @@
           <p class="text-xs font-semibold text-violet-400 uppercase tracking-widest mb-1">Admin Panel</p>
           <h1 class="text-3xl font-black text-white">Dashboard</h1>
         </div>
-        <button class="btn-primary" @click="showCreateModal = true">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          Create Event
-        </button>
       </div>
 
       <!-- KPI Cards -->
@@ -56,7 +50,7 @@
           <input v-model="eventSearch" type="text" placeholder="Search events…" class="input-field text-sm py-2.5 max-w-xs" />
           <select v-model="eventStatusFilter" class="input-field text-sm py-2.5 w-44">
             <option value="all">All Status</option>
-            <option value="on_sale">On Sale</option>
+            <option value="published">Published</option>
             <option value="pending">Pending Approval</option>
             <option value="rejected">Rejected</option>
           </select>
@@ -97,23 +91,41 @@
             </div>
           </template>
           <template #cell-status="{ row }">
-            <select
-              v-model="row.status"
-              class="bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 rounded-lg px-2 py-1 focus:outline-none focus:border-violet-500"
-              @change="onEventStatusChange(row)"
-            >
-              <option value="on_sale">On Sale</option>
-              <option value="pending">Pending</option>
-              <option value="rejected">Rejected</option>
-            </select>
+            <span :class="eventBadge(row.status)" class="capitalize">
+              {{ eventStatusLabel(row.status) }}
+            </span>
           </template>
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
-              <button class="btn-ghost py-1 px-2 text-xs" @click="editEvent(row)">
+              <template v-if="String(row.status || '').toLowerCase() === 'pending'">
+                <button 
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="approvePendingEvent(row)"
+                >
+                  Approve
+                </button>
+                <button 
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-red-300 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="rejectPendingEvent(row)"
+                >
+                  Reject
+                </button>
+              </template>
+              <button 
+                :disabled="!hasAdminRole()"
+                class="btn-ghost py-1 px-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="editEvent(row)"
+              >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 Edit
               </button>
-              <button class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors" @click="confirmDelete(row)">
+              <button 
+                :disabled="!hasAdminRole()"
+                class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="confirmDelete(row)"
+              >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               </button>
             </div>
@@ -127,12 +139,17 @@
           <input v-model="orderSearch" type="text" placeholder="Search by order ID or event…" class="input-field text-sm py-2.5 max-w-xs" />
           <select v-model="orderStatusFilter" class="input-field text-sm py-2.5 w-44">
             <option value="all">All Status</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="pending">Pending</option>
-            <option value="cancelled">Cancelled</option>
+            <option value="CONFIRMED">Confirmed</option>
+            <option value="PENDING">Pending</option>
+            <option value="CANCELLED">Cancelled</option>
+            <option value="REFUNDED">Refunded</option>
           </select>
         </div>
+        <div v-if="adminStore.ordersLoading" class="flex justify-center py-12">
+          <svg class="w-8 h-8 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        </div>
         <AdminTable
+          v-else
           :columns="orderColumns"
           :rows="filteredAdminOrders"
           :total-rows="filteredAdminOrders.length"
@@ -141,7 +158,7 @@
           empty-text="No orders found"
         >
           <template #cell-id="{ value }">
-            <span class="font-mono text-xs text-violet-400">{{ value }}</span>
+            <span class="font-mono text-xs text-violet-400">{{ typeof value === 'string' ? value.slice(0, 8) + '…' : value }}</span>
           </template>
           <template #cell-eventTitle="{ value }">
             <span class="text-white text-sm font-medium line-clamp-1 max-w-[200px]">{{ value }}</span>
@@ -159,36 +176,205 @@
       </div>
 
       <!-- TAB: Users -->
-      <div v-else-if="activeTab === 'users'" class="animate-fade-in">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div v-for="user in mockUsers" :key="user.id" class="card p-5 hover:border-zinc-700 transition-colors">
+      <div v-else-if="activeTab === 'users'" class="space-y-4 animate-fade-in">
+        <div class="bg-blue-500/10 border border-blue-500/30 text-blue-300 rounded-xl px-4 py-3 text-sm">
+          Role approval list only shows accounts that submitted event creation requests and are waiting admin review.
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input
+            v-model="userSearch"
+            type="text"
+            placeholder="Search users by name or email…"
+            class="input-field text-sm py-2.5 max-w-xs"
+            @input="debouncedFetchUsers"
+          />
+          <select v-model="userRoleFilter" class="input-field text-sm py-2.5 w-44" @change="onUserRoleFilter">
+            <option value="all">All Roles</option>
+            <option value="CUSTOMER">Customers</option>
+            <option value="ORGANIZER">Organizers</option>
+            <option value="ADMIN">Admins</option>
+          </select>
+        </div>
+        <div v-if="adminStore.usersLoading" class="flex justify-center py-12">
+          <svg class="w-8 h-8 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        </div>
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-for="user in filteredUsers" :key="user.id" class="card p-5 hover:border-zinc-700 transition-colors">
             <div class="flex items-center gap-3 mb-3">
-              <img :src="user.avatar" :alt="user.name" class="w-10 h-10 rounded-full bg-zinc-800" />
-              <div>
-                <p class="font-semibold text-white text-sm">{{ user.name }}</p>
-                <p class="text-xs text-zinc-500">{{ user.email }}</p>
+              <img :src="user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`" :alt="user.displayName || user.username" class="w-10 h-10 rounded-full bg-zinc-800" />
+              <div class="min-w-0">
+                <p class="font-semibold text-white text-sm truncate">{{ user.displayName || user.username }}</p>
+                <p class="text-xs text-zinc-500 truncate">{{ user.email }}</p>
               </div>
-              <span class="ml-auto" :class="user.role === 'admin' ? 'badge-violet' : 'badge-blue'">{{ user.role }}</span>
+              <span class="ml-auto shrink-0" :class="user.role === 'ADMIN' ? 'badge-violet' : user.role === 'ORGANIZER' ? 'badge-yellow' : 'badge-blue'">{{ user.role }}</span>
             </div>
-            <div class="flex items-center gap-4 text-sm">
-              <div>
-                <p class="text-zinc-500 text-xs">Orders</p>
-                <p class="font-bold text-white">{{ user.orders }}</p>
+            <div class="flex items-center justify-between">
+              <span :class="user.active ? 'badge-green' : 'badge-red'">{{ user.active ? 'Active' : 'Disabled' }}</span>
+              <span class="text-xs text-zinc-500">{{ requestCountByUser[user.id] || 0 }} request(s)</span>
+              <div class="flex gap-1">
+                <button
+                  v-if="user.active"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-amber-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Deactivate"
+                  @click="deactivateUser(user.id)"
+                >Deactivate</button>
+                <button
+                  v-else
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Activate"
+                  @click="activateUser(user.id)"
+                >Activate</button>
+                <button
+                  v-if="user.role === 'CUSTOMER'"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-violet-400 hover:text-violet-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="promoteOrganizer(user.id)"
+                >→ Organizer</button>
+                <button
+                  v-if="user.role === 'ORGANIZER'"
+                  :disabled="!hasAdminRole()"
+                  class="py-1 px-2 rounded-lg text-xs text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="demoteCustomer(user.id)"
+                >→ Customer</button>
               </div>
-              <div>
-                <p class="text-zinc-500 text-xs">Total Spent</p>
-                <p class="font-bold text-white">{{ formatPrice(user.spent) }}</p>
+            </div>
+          </div>
+          <div v-if="filteredUsers.length === 0" class="col-span-full text-center text-zinc-500 py-12">No role-approval accounts found</div>
+        </div>
+      </div>
+      <!-- TAB: Revenue -->
+      <div v-else-if="activeTab === 'revenue'" class="space-y-6 animate-fade-in">
+        <!-- Date filters -->
+        <div class="flex flex-col sm:flex-row gap-3 items-end">
+          <div>
+            <label class="block text-xs font-semibold text-zinc-400 mb-1 uppercase tracking-wide">From</label>
+            <input v-model="revenueFrom" type="date" class="input-field text-sm py-2" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-zinc-400 mb-1 uppercase tracking-wide">To</label>
+            <input v-model="revenueTo" type="date" class="input-field text-sm py-2" />
+          </div>
+          <button class="btn-primary py-2" @click="fetchRevenue">Apply</button>
+        </div>
+
+        <!-- Revenue KPI cards -->
+        <div v-if="adminStore.revenueLoading" class="flex justify-center py-12">
+          <svg class="w-8 h-8 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        </div>
+        <div v-else class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="card p-5">
+            <p class="text-xs text-zinc-500 mb-1">Gross Revenue (GMV)</p>
+            <p class="text-xl font-black text-white">{{ formatPrice(adminStore.revenueSummary?.totalGrossRevenue ?? adminStore.revenueSummary?.gmv) }}</p>
+          </div>
+          <div class="card p-5">
+            <p class="text-xs text-zinc-500 mb-1">Platform Fee Collected</p>
+            <p class="text-xl font-black text-emerald-400">{{ formatPrice(adminStore.revenueSummary?.totalPlatformFee ?? adminStore.revenueSummary?.platformFeeTotal) }}</p>
+          </div>
+          <div class="card p-5">
+            <p class="text-xs text-zinc-500 mb-1">Gateway Fees</p>
+            <p class="text-xl font-black text-amber-400">{{ formatPrice(adminStore.revenueSummary?.totalGatewayFee ?? adminStore.revenueSummary?.gatewayFeeTotal) }}</p>
+          </div>
+          <div class="card p-5">
+            <p class="text-xs text-zinc-500 mb-1">Organizer Net Payout</p>
+            <p class="text-xl font-black text-violet-400">{{ formatPrice(adminStore.revenueSummary?.totalOrganizerNet ?? adminStore.revenueSummary?.organizerNetTotal) }}</p>
+          </div>
+        </div>
+
+        <!-- Payments table -->
+        <div class="card overflow-hidden">
+          <div class="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+            <h3 class="font-bold text-white">Payment Transactions</h3>
+            <span class="text-xs text-zinc-500">{{ adminStore.payments.length }} records</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-zinc-800 text-left">
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Payment Code</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Order</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Method</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Status</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Amount</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Platform Fee</th>
+                  <th class="px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Paid At</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="adminStore.payments.length === 0">
+                  <td colspan="7" class="px-4 py-10 text-center text-zinc-500">No payment records</td>
+                </tr>
+                <tr
+                  v-for="p in adminStore.payments"
+                  :key="p.paymentId || p.paymentCode"
+                  class="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+                >
+                  <td class="px-4 py-3 font-mono text-xs text-violet-400">{{ p.paymentCode }}</td>
+                  <td class="px-4 py-3 font-mono text-xs text-zinc-400">{{ p.orderCode || p.orderId?.slice(0,8) }}</td>
+                  <td class="px-4 py-3 text-zinc-300">{{ p.method }}</td>
+                  <td class="px-4 py-3">
+                    <span :class="p.status === 'PAID' || p.status === 'SUCCESS' ? 'badge-green' : p.status === 'FAILED' ? 'badge-red' : 'badge-yellow'">{{ p.status }}</span>
+                  </td>
+                  <td class="px-4 py-3 font-semibold text-white">{{ formatPrice(p.amount) }}</td>
+                  <td class="px-4 py-3 text-emerald-400">{{ formatPrice(p.platformFee) }}</td>
+                  <td class="px-4 py-3 text-zinc-400 text-xs">{{ formatDateTime(p.paidAt || p.createdAt) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card p-5 space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="font-bold text-white">Organizer Money Management</h3>
+            <span class="text-xs text-zinc-500">All ticket sales deduct 10% platform fee before organizer payout</span>
+          </div>
+
+          <p v-if="adminStore.payoutError" class="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+            {{ adminStore.payoutError }}
+          </p>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div v-for="org in organizerUsers" :key="org.id" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-white">{{ org.name }}</p>
+                  <p class="text-xs text-zinc-500">{{ org.email }}</p>
+                </div>
+                <span class="badge-yellow">ORGANIZER</span>
               </div>
-              <div class="ml-auto">
-                <span :class="user.active ? 'badge-green' : 'badge-red'">{{ user.active ? 'Active' : 'Banned' }}</span>
+
+              <div class="flex gap-2">
+                <button class="btn-secondary text-xs py-2 px-3" :disabled="adminStore.payoutLoading" @click="previewPayout(org.id)">
+                  Preview
+                </button>
+                <button class="btn-primary text-xs py-2 px-3" :disabled="adminStore.payoutLoading" @click="executePayout(org.id)">
+                  Execute Payout
+                </button>
+              </div>
+
+              <div v-if="adminStore.payoutPreviews[org.id]" class="text-xs text-zinc-400 border border-zinc-800 rounded-lg p-3">
+                <p>Pending payments: <span class="text-zinc-200">{{ adminStore.payoutPreviews[org.id].pendingPayments ?? 0 }}</span></p>
+                <p>Total net payout: <span class="text-emerald-400">{{ formatPrice(adminStore.payoutPreviews[org.id].totalNetPayout ?? 0) }}</span></p>
+              </div>
+
+              <div v-if="adminStore.payoutResults[org.id]" class="text-xs text-zinc-400 border border-zinc-800 rounded-lg p-3">
+                <p>Paid payments: <span class="text-zinc-200">{{ adminStore.payoutResults[org.id].paidPayments ?? 0 }}</span></p>
+                <p>Total paid: <span class="text-emerald-400">{{ formatPrice(adminStore.payoutResults[org.id].totalPaid ?? 0) }}</span></p>
+                <p class="text-zinc-500 mt-1">Ref: {{ adminStore.payoutResults[org.id].payoutReference || 'N/A' }}</p>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Create/Edit Event Modal -->
+      <!-- TAB: Sales -->
+      <div v-else-if="activeTab === 'sales'" class="space-y-6 animate-fade-in">
+        <PlatformSalesManagement />
+      </div>
+    </div>
     <Transition name="fade">
       <div
         v-if="showCreateModal"
@@ -292,10 +478,29 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
-import AdminTable       from '@/components/AdminTable.vue'
-import { events as allEvents, categories } from '@/data/events'
-import { adminOrders }  from '@/data/orders'
+import { ref, computed, reactive, onMounted } from 'vue'
+import AdminTable from '@/components/AdminTable.vue'
+import PlatformSalesManagement from '@/components/PlatformSalesManagement.vue'
+import { useAdminStore } from '@/stores/admin.store'
+import { useAuthStore } from '@/stores/auth.store'
+import { categories }    from '@/data/events'
+
+const adminStore = useAdminStore()
+const auth = useAuthStore()
+
+// Helper to check if current user has ADMIN role from JWT
+function hasAdminRole() {
+  return auth.isAdmin && auth.tokenValidated
+}
+
+// Helper to warn and prevent action if not authorized
+function requireAdminRole(actionName = 'action') {
+  if (!hasAdminRole()) {
+    console.warn(`[Security] Unauthorized ${actionName}: User does not have ADMIN role in JWT`)
+    return false
+  }
+  return true
+}
 
 const activeTab          = ref('events')
 const showCreateModal    = ref(false)
@@ -305,19 +510,105 @@ const eventSearch        = ref('')
 const eventStatusFilter  = ref('all')
 const orderSearch        = ref('')
 const orderStatusFilter  = ref('all')
+const userSearch         = ref('')
+const userRoleFilter     = ref('all')
+const revenueFrom        = ref('')
+const revenueTo          = ref('')
 
-// Local mutable copy of events so admin can edit status
-const localEvents = reactive(allEvents.map((e) => ({ ...e })))
+function toDateInput(date) {
+  const d = new Date(date)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const today = new Date()
+const thirtyDaysAgo = new Date(today)
+thirtyDaysAgo.setDate(today.getDate() - 30)
+revenueFrom.value = toDateInput(thirtyDaysAgo)
+revenueTo.value = toDateInput(today)
 
 const eventForm = reactive({
   title: '', category: '', date: '', time: '', price: 0,
   venue: '', city: '', capacity: 0, description: '', image: '',
 })
 
+// Debounce helper for user search
+let userSearchTimer = null
+function debouncedFetchUsers() {
+  clearTimeout(userSearchTimer)
+  userSearchTimer = setTimeout(() => adminStore.fetchUsers(userSearch.value || null), 350)
+}
+
+function onUserRoleFilter() {
+  adminStore.fetchUsers(userSearch.value || null)
+}
+
+function dateRangeParams() {
+  const fromDate = revenueFrom.value || toDateInput(thirtyDaysAgo)
+  const toDate = revenueTo.value || toDateInput(today)
+  return {
+    from: `${fromDate}T00:00:00`,
+    to: `${toDate}T23:59:59`,
+  }
+}
+
+// Fetch data on mount
+onMounted(async () => {
+  await adminStore.fetchPendingEvents()
+  const params = dateRangeParams()
+  await Promise.all([
+    adminStore.fetchAllEvents(),
+    adminStore.fetchPlatformStats(),
+    adminStore.fetchUsers(),
+    adminStore.fetchAllOrders(),
+    adminStore.fetchRevenueSummary(params),
+    adminStore.fetchPayments(params),
+  ])
+})
+
+async function fetchRevenue() {
+  const params = dateRangeParams()
+  await Promise.all([
+    adminStore.fetchRevenueSummary(params),
+    adminStore.fetchPayments(params),
+  ])
+}
+
+async function previewPayout(organizerId) {
+  if (!requireAdminRole('payout preview')) return
+  await adminStore.previewOrganizerPayout(organizerId, dateRangeParams())
+}
+
+async function executePayout(organizerId) {
+  if (!requireAdminRole('payout execution')) return
+  const params = dateRangeParams()
+  const payoutRef = `PAYOUT-${new Date().toISOString()
+    .replaceAll('-', '')
+    .replaceAll(':', '')
+    .replaceAll('.', '')
+    .replaceAll('T', '')
+    .replaceAll('Z', '')
+    .slice(0, 14)}`
+  const payload = {
+    from: params.from,
+    to: params.to,
+    payoutReference: payoutRef,
+    note: 'Admin payout execution',
+  }
+  const executed = await adminStore.executeOrganizerPayout(organizerId, payload)
+  if (executed) {
+    await fetchRevenue()
+  }
+}
+
 const adminTabs = [
-  { id: 'events', label: 'Events'  },
-  { id: 'orders', label: 'Orders'  },
-  { id: 'users',  label: 'Users'   },
+  { id: 'events',  label: 'Events'  },
+  { id: 'orders',  label: 'Orders'  },
+  { id: 'users',   label: 'Users'   },
+  { id: 'revenue', label: 'Revenue' },
+  { id: 'sales',   label: 'Sales'   },
 ]
 
 const eventColumns = [
@@ -338,112 +629,195 @@ const orderColumns = [
 ]
 
 const filteredAdminEvents = computed(() => {
-  let list = localEvents
+  let list = adminStore.allEvents
   if (eventStatusFilter.value !== 'all') list = list.filter((e) => e.status === eventStatusFilter.value)
   if (eventSearch.value.trim()) {
     const q = eventSearch.value.toLowerCase()
-    list = list.filter((e) => e.title.toLowerCase().includes(q) || e.category.toLowerCase().includes(q))
+    list = list.filter((e) =>
+      (e.title    ?? '').toLowerCase().includes(q) ||
+      (e.category ?? '').toLowerCase().includes(q)
+    )
   }
   return list
 })
 
 const filteredAdminOrders = computed(() => {
-  let list = adminOrders
+  let list = adminStore.allOrders
   if (orderStatusFilter.value !== 'all') list = list.filter((o) => o.status === orderStatusFilter.value)
   if (orderSearch.value.trim()) {
     const q = orderSearch.value.toLowerCase()
-    list = list.filter((o) => o.id.toLowerCase().includes(q) || o.eventTitle.toLowerCase().includes(q))
+    list = list.filter((o) =>
+      String(o.id).toLowerCase().includes(q) ||
+      String(o.orderCode ?? '').toLowerCase().includes(q) ||
+      String(o.eventTitle ?? '').toLowerCase().includes(q)
+    )
   }
   return list
 })
 
+const filteredUsers = computed(() => {
+  const requestedUserIds = new Set(
+    adminStore.pendingEvents
+      .map((e) => String(e.organizerId || e.organizer?.id || ''))
+      .filter(Boolean)
+  )
+
+  let list = adminStore.users.filter((u) => requestedUserIds.has(String(u.id)))
+  if (userRoleFilter.value !== 'all') list = list.filter((u) => u.role === userRoleFilter.value)
+  return list
+})
+
+const requestCountByUser = computed(() => {
+  const map = {}
+  for (const ev of adminStore.pendingEvents) {
+    const key = String(ev.organizerId || ev.organizer?.id || '')
+    if (!key) continue
+    map[key] = (map[key] || 0) + 1
+  }
+  return map
+})
+
+const organizerUsers = computed(() =>
+  adminStore.users.filter((u) => u.role === 'ORGANIZER')
+)
+
 const kpis = computed(() => [
   {
-    label: 'Total Revenue', value: '₫ 42.8M', trend: '↑ 12.4%', trendUp: true,
+    label: 'Total Revenue',
+    value: adminStore.kpiRevenue
+      ? new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(adminStore.kpiRevenue)
+      : '₫ —',
+    trend: '↑ 12.4%', trendUp: true,
     iconBg: 'bg-emerald-500/20', iconColor: 'text-emerald-400',
     icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   },
   {
-    label: 'Total Events', value: localEvents.length, trend: '↑ 3 new', trendUp: true,
+    label: 'Total Events',
+    value: adminStore.allEvents.length || adminStore.kpiOrders || '—',
+    trend: `↑ ${adminStore.pendingEvents.length} pending`, trendUp: true,
     iconBg: 'bg-violet-500/20', iconColor: 'text-violet-400',
     icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   },
   {
-    label: 'Total Orders', value: adminOrders.length, trend: '↑ 8.1%', trendUp: true,
+    label: 'Total Orders',
+    value: adminStore.kpiOrders ?? adminStore.allOrders.length,
+    trend: '↑ 8.1%', trendUp: true,
     iconBg: 'bg-blue-500/20', iconColor: 'text-blue-400',
     icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
   },
   {
-    label: 'Active Users', value: '8,241', trend: '↑ 5.3%', trendUp: true,
+    label: 'Active Users',
+    value: adminStore.kpiUsers ?? (adminStore.users.length || '—'),
+    trend: '↑ 5.3%', trendUp: true,
     iconBg: 'bg-amber-500/20', iconColor: 'text-amber-400',
     icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   },
 ])
 
-const mockUsers = [
-  { id: 1, name: 'Alex Nguyen',  email: 'alex@email.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex', role: 'admin', orders: 3, spent: 7050000, active: true  },
-  { id: 2, name: 'Nguyen Van A', email: 'nva@email.com',  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=NVA',  role: 'user',  orders: 5, spent: 12300000, active: true  },
-  { id: 3, name: 'Tran Thi B',   email: 'ttb@email.com',  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=TTB',  role: 'user',  orders: 1, spent: 650000,  active: false },
-  { id: 4, name: 'Le Van C',     email: 'lvc@email.com',  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=LVC',  role: 'user',  orders: 8, spent: 22000000, active: true  },
-  { id: 5, name: 'Pham Thi D',   email: 'ptd@email.com',  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=PTD',  role: 'user',  orders: 2, spent: 4200000,  active: true  },
-  { id: 6, name: 'Hoang Van E',  email: 'hve@email.com',  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=HVE',  role: 'user',  orders: 0, spent: 0,       active: true  },
-]
+const mockUsers = []  // removed — using adminStore.users
 
-function onEventStatusChange(row) {
-  // In production: call API to update status
-  console.log(`Event "${row.title}" status → ${row.status}`)
+async function approvePendingEvent(row) {
+  if (!requireAdminRole('event approval')) return
+  const ok = await adminStore.approveEvent(row.id)
+  if (ok) row.status = 'published'
+}
+
+async function rejectPendingEvent(row) {
+  if (!requireAdminRole('event rejection')) return
+  const ok = await adminStore.rejectEvent(row.id)
+  if (ok) row.status = 'rejected'
 }
 
 function editEvent(row) {
+  if (!requireAdminRole('event edit')) return
   editingEvent.value  = row
   Object.assign(eventForm, { ...row })
   showCreateModal.value = true
 }
 
 function confirmDelete(row) {
+  if (!requireAdminRole('event deletion')) return
   deleteTarget.value = row
 }
 
-function deleteEvent() {
-  const idx = localEvents.findIndex((e) => e.id === deleteTarget.value.id)
-  if (idx !== -1) localEvents.splice(idx, 1)
+async function deleteEvent() {
+  if (!requireAdminRole('event deletion')) return
+  adminStore.deleteLocalEvent(deleteTarget.value.id)
   deleteTarget.value = null
 }
 
-function saveEvent() {
+async function saveEvent() {
+  if (!requireAdminRole('event save')) return
   if (editingEvent.value) {
-    const idx = localEvents.findIndex((e) => e.id === editingEvent.value.id)
-    if (idx !== -1) Object.assign(localEvents[idx], { ...eventForm })
+    await adminStore.updateEvent(editingEvent.value.id, { ...eventForm })
   } else {
-    localEvents.push({
-      id: Date.now(),
-      ...eventForm,
-      status: 'pending',
-      sold: 0,
-      rating: 0,
-      reviewCount: 0,
-      featured: false,
-      tags: [],
-      organizer: { name: 'New Organizer', verified: false },
-      ticketTypes: [],
-    })
+    await adminStore.createEvent({ ...eventForm, status: 'pending' })
   }
   showCreateModal.value = false
   editingEvent.value    = null
   Object.assign(eventForm, { title: '', category: '', date: '', time: '', price: 0, venue: '', city: '', capacity: 0, description: '', image: '' })
 }
 
+// ─── User Management (JWT-protected) ─────────────────────────────────────
+async function deactivateUser(userId) {
+  if (!requireAdminRole('user deactivation')) return
+  await adminStore.deactivateUser(userId)
+}
+
+async function activateUser(userId) {
+  if (!requireAdminRole('user activation')) return
+  await adminStore.activateUser(userId)
+}
+
+async function promoteOrganizer(userId) {
+  if (!requireAdminRole('user role promotion')) return
+  await adminStore.promoteOrganizer(userId)
+}
+
+async function demoteCustomer(userId) {
+  if (!requireAdminRole('user role demotion')) return
+  await adminStore.demoteCustomer(userId)
+}
+
 function formatDate(d) {
+  if (!d) return ''
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 function formatDateTime(d) {
+  if (!d) return ''
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function formatPrice(val) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
 function orderBadge(status) {
-  return { confirmed: 'badge-green', pending: 'badge-yellow', cancelled: 'badge-red' }[status] ?? 'badge-blue'
+  const key = String(status || '').toLowerCase()
+  return { confirmed: 'badge-green', pending: 'badge-yellow', cancelled: 'badge-red', refunded: 'badge-blue' }[key] ?? 'badge-blue'
+}
+
+function eventBadge(status) {
+  const key = String(status || '').toLowerCase()
+  return {
+    pending: 'badge-yellow',
+    published: 'badge-green',
+    on_sale: 'badge-green',
+    approved: 'badge-green',
+    rejected: 'badge-red',
+    draft: 'badge-blue',
+  }[key] ?? 'badge-blue'
+}
+
+function eventStatusLabel(status) {
+  const key = String(status || '').toLowerCase()
+  const mapped = {
+    pending: 'Pending',
+    published: 'Published',
+    on_sale: 'Published',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    draft: 'Draft',
+  }[key]
+  return mapped || key || 'Unknown'
 }
 </script>
 

@@ -18,16 +18,21 @@
 
         <!-- Desktop Nav -->
         <nav class="hidden md:flex items-center gap-1">
-          <RouterLink to="/" class="btn-ghost text-sm" active-class="!text-white !bg-zinc-800">
-            Browse Events
-          </RouterLink>
           <RouterLink
             v-if="auth.isAdmin"
             to="/admin"
             class="btn-ghost text-sm"
             active-class="!text-white !bg-zinc-800"
           >
-            Admin Panel
+            Dashboard
+          </RouterLink>
+          <RouterLink
+            v-if="auth.isOrganizer && !auth.isAdmin"
+            to="/organizer"
+            class="btn-ghost text-sm"
+            active-class="!text-white !bg-zinc-800"
+          >
+            My Events
           </RouterLink>
         </nav>
 
@@ -45,6 +50,15 @@
             </svg>
             <span class="hidden lg:inline">Search</span>
           </button>
+
+          <RouterLink
+            v-if="auth.isLoggedIn"
+            to="/organizer/events/create"
+            class="btn-primary text-sm py-2 px-4"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Create Event
+          </RouterLink>
 
           <!-- Logged in user -->
           <template v-if="auth.isLoggedIn">
@@ -92,6 +106,15 @@
 
                   <div class="py-1">
                     <RouterLink
+                      v-if="auth.isAdmin"
+                      to="/admin"
+                      class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                      @click="dropdownOpen = false"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      Dashboard
+                    </RouterLink>
+                    <RouterLink
                       to="/profile"
                       class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
                       @click="dropdownOpen = false"
@@ -100,21 +123,22 @@
                       My Tickets
                     </RouterLink>
                     <RouterLink
-                      v-if="auth.isAdmin"
-                      to="/admin"
+                      to="/vouchers"
+                      class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                      @click="dropdownOpen = false"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9v12m0-12l1.5-3h9l1.5 3m-12 0h12M9 9h6m-4 8h4"/></svg>
+                      My Vouchers
+                    </RouterLink>
+                    <RouterLink
+                      v-if="auth.isOrganizer && !auth.isAdmin"
+                      to="/organizer"
                       class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
                       @click="dropdownOpen = false"
                     >
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                      Admin Panel
+                      My Events
                     </RouterLink>
-                    <button
-                      class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
-                      @click="toggleRole"
-                    >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                      Switch to {{ auth.isAdmin ? 'User' : 'Admin' }}
-                    </button>
                   </div>
 
                   <div class="py-1 border-t border-zinc-800">
@@ -133,8 +157,8 @@
 
           <!-- Not logged in -->
           <template v-else>
-            <button class="btn-secondary text-sm py-2 px-4">Sign In</button>
-            <button class="btn-primary text-sm py-2 px-4">Sign Up</button>
+            <RouterLink to="/login"  class="btn-secondary text-sm py-2 px-4">Sign In</RouterLink>
+            <RouterLink to="/register" class="btn-primary text-sm py-2 px-4">Sign Up</RouterLink>
           </template>
 
           <!-- Mobile menu button -->
@@ -161,9 +185,9 @@
         leave-to-class="opacity-0 -translate-y-2"
       >
         <div v-if="mobileOpen" class="md:hidden border-t border-zinc-800 py-3 space-y-1">
-          <RouterLink to="/" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">Browse Events</RouterLink>
+          <RouterLink v-if="auth.isAdmin" to="/admin" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">Dashboard</RouterLink>
           <RouterLink v-if="auth.isLoggedIn" to="/profile" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">My Tickets</RouterLink>
-          <RouterLink v-if="auth.isAdmin" to="/admin" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">Admin Panel</RouterLink>
+          <RouterLink v-if="auth.isOrganizer && !auth.isAdmin" to="/organizer" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">My Events</RouterLink>
         </div>
       </Transition>
     </div>
@@ -230,8 +254,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import { events } from '@/data/events'
+import { useAuthStore } from '@/stores/auth.store'
+import { useEventStore } from '@/stores/event.store'
 
 const auth        = useAuthStore()
 const router      = useRouter()
@@ -243,15 +267,16 @@ const searchQuery = ref('')
 const dropdownRef = ref(null)
 const searchInput = ref(null)
 
+const eventStore    = useEventStore()
 const searchResults = computed(() => {
   if (!searchQuery.value.trim()) return []
   const q = searchQuery.value.toLowerCase()
-  return events.filter(
+  return eventStore.events.filter(
     (e) =>
-      e.title.toLowerCase().includes(q) ||
-      e.venue.toLowerCase().includes(q) ||
-      e.city.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q)
+      (e.title  ?? '').toLowerCase().includes(q) ||
+      (e.venue  ?? '').toLowerCase().includes(q) ||
+      (e.city   ?? '').toLowerCase().includes(q) ||
+      (e.category ?? '').toLowerCase().includes(q)
   ).slice(0, 5)
 })
 
@@ -278,16 +303,6 @@ function handleLogout() {
   dropdownOpen.value = false
   auth.logout()
   router.push('/')
-}
-
-function toggleRole() {
-  auth.switchRole()
-  dropdownOpen.value = false
-  if (auth.isAdmin) {
-    router.push('/admin')
-  } else {
-    router.push('/')
-  }
 }
 
 onMounted(() => {

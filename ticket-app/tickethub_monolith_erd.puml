@@ -1,0 +1,266 @@
+@startuml TicketHub_Monolith_ERD
+
+!theme plain
+skinparam linetype ortho
+skinparam roundcorner 8
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+skinparam class {
+  BackgroundColor White
+  BorderColor #73726c
+  HeaderBackgroundColor #E6F1FB
+  HeaderFontColor #0C447C
+  HeaderFontStyle Bold
+  ArrowColor #73726c
+}
+
+' ─────────────────────────────────────────
+' GROUP: Identity / Auth
+' ─────────────────────────────────────────
+package "Identity / Auth" #E6F1FB {
+
+  entity USER {
+    * id           : UUID <<PK>>
+    --
+    * email        : VARCHAR(255) <<UNIQUE>>
+    * password_hash: VARCHAR(255)
+    * role         : ENUM(CUSTOMER, ORGANIZER, ADMIN)
+    full_name      : VARCHAR(255)
+    phone          : VARCHAR(20)
+    avatar_url     : VARCHAR(500)
+    * is_verified  : BOOLEAN
+    * is_active    : BOOLEAN
+    * created_at   : DATETIME
+    * updated_at   : DATETIME
+  }
+
+}
+
+' ─────────────────────────────────────────
+' GROUP: Event Management
+' ─────────────────────────────────────────
+package "Event Management" #EAF3DE {
+
+  entity EVENT {
+    * id             : BIGINT <<PK>>
+    --
+    * organizer_id   : UUID <<FK>>
+    * title          : VARCHAR(255)
+    description      : TEXT
+    * venue          : VARCHAR(255)
+    * city           : VARCHAR(100)
+    location_coords  : VARCHAR(100)
+    * start_time     : DATETIME
+    * end_time       : DATETIME
+    banner_url       : VARCHAR(500)
+    * status         : ENUM(DRAFT, PENDING, APPROVED, REJECTED, PUBLISHED, CANCELLED)
+    * is_published   : BOOLEAN
+    * created_at     : DATETIME
+    * updated_at     : DATETIME
+  }
+
+  entity EVENT_APPROVAL {
+    * id          : BIGINT <<PK>>
+    --
+    * event_id    : BIGINT <<FK>>
+    * admin_id    : UUID <<FK>>
+    * decision    : ENUM(APPROVED, REJECTED)
+    reason        : TEXT
+    decided_at    : DATETIME
+  }
+
+  entity SEAT_MAP {
+    * id           : BIGINT <<PK>>
+    --
+    * event_id     : BIGINT <<FK>>
+    * name         : VARCHAR(255)
+    layout_json    : JSON
+    * total_rows   : INT
+    * total_cols   : INT
+    * created_at   : DATETIME
+  }
+
+  entity TICKET_TIER {
+    * id                 : BIGINT <<PK>>
+    --
+    * seat_map_id        : BIGINT <<FK>>
+    * name               : VARCHAR(100)
+    * tier_type          : ENUM(GENERAL, VIP, VVIP, STANDING)
+    * price              : DECIMAL(10,2)
+    * quantity_total     : INT
+    * quantity_available : INT
+    color_code           : VARCHAR(10)
+    sale_start           : DATETIME
+    sale_end             : DATETIME
+  }
+
+  entity SEAT {
+    * id             : BIGINT <<PK>>
+    --
+    * seat_map_id    : BIGINT <<FK>>
+    ticket_tier_id   : BIGINT <<FK>>
+    * row_label      : VARCHAR(10)
+    * col_number     : INT
+    * seat_code      : VARCHAR(20) <<UNIQUE>>
+    * status         : ENUM(AVAILABLE, HELD, BOOKED, DISABLED)
+  }
+
+}
+
+' ─────────────────────────────────────────
+' GROUP: Booking / Order
+' ─────────────────────────────────────────
+package "Booking / Order" #FAEEDA {
+
+  entity ORDER {
+    * id             : UUID <<PK>>
+    --
+    * user_id        : UUID <<FK>>
+    * order_code     : VARCHAR(50) <<UNIQUE>>
+    * order_status   : ENUM(PENDING, CONFIRMED, CANCELLED, REFUNDED)
+    * total_amount   : DECIMAL(10,2)
+    discount_amount  : DECIMAL(10,2)
+    * final_amount   : DECIMAL(10,2)
+    notes            : VARCHAR(255)
+    * created_at     : DATETIME
+    * updated_at     : DATETIME
+  }
+
+  entity ORDER_ITEM {
+    * id              : UUID <<PK>>
+    --
+    * order_id        : UUID <<FK>>
+    * ticket_tier_id  : BIGINT <<FK>>
+    * quantity        : INT
+    * unit_price      : DECIMAL(10,2)
+    discount_amount   : DECIMAL(10,2)
+    * final_price     : DECIMAL(10,2)
+    * created_at      : DATETIME
+    * updated_at      : DATETIME
+  }
+
+  entity TICKET {
+    * id             : UUID <<PK>>
+    --
+    * order_item_id  : UUID <<FK>>
+    * ticket_code    : VARCHAR(50) <<UNIQUE>>
+    qr_code          : VARCHAR(255)
+    * ticket_status  : ENUM(ACTIVE, USED, CANCELLED, REFUNDED)
+    seat_number      : VARCHAR(20)
+    used_at          : DATETIME
+    * created_at     : DATETIME
+    * updated_at     : DATETIME
+  }
+
+  entity PAYMENT {
+    * id              : UUID <<PK>>
+    --
+    * order_id        : UUID <<FK>>
+    * payment_code    : VARCHAR(50) <<UNIQUE>>
+    * payment_method  : VARCHAR(50)
+    transaction_id    : VARCHAR(100)
+    * amount          : DECIMAL(10,2)
+    * payment_status  : ENUM(PENDING, SUCCESS, FAILED, REFUNDED)
+    gateway_response  : VARCHAR(500)
+    paid_at           : DATETIME
+    * created_at      : DATETIME
+    * updated_at      : DATETIME
+  }
+
+}
+
+' ─────────────────────────────────────────
+' GROUP: Promotion
+' ─────────────────────────────────────────
+package "Promotion" #EEEDFE {
+
+  entity VOUCHER {
+    * id               : UUID <<PK>>
+    --
+    organizer_id       : UUID <<FK>>
+    * code             : VARCHAR(100) <<UNIQUE>>
+    * discount_type    : ENUM(PERCENTAGE, FIXED_AMOUNT)
+    * discount_value   : DECIMAL(18,2)
+    min_order_value    : DECIMAL(18,2)
+    usage_limit        : INT
+    * used_count       : INT
+    * valid_from       : DATETIME
+    * valid_until      : DATETIME
+    * apply_on         : ENUM(ALL, SPECIFIC_EVENT, SPECIFIC_TIER)
+    * is_active        : BOOLEAN
+  }
+
+  entity VOUCHER_USAGE {
+    * id          : UUID <<PK>>
+    --
+    * voucher_id  : UUID <<FK>>
+    * order_id    : UUID <<FK>>
+    * user_id     : UUID <<FK>>
+    * used_at     : DATETIME
+  }
+
+  entity TICKET_PROMOTION {
+    * id              : BIGINT <<PK>>
+    --
+    * ticket_tier_id  : BIGINT <<FK>>
+    * promo_name      : VARCHAR(100)
+    description       : VARCHAR(255)
+    * promo_type      : ENUM(PERCENTAGE, FIXED, EARLY_BIRD, GROUP)
+    * value           : DECIMAL(10,2)
+    min_quantity      : INT
+    usage_limit       : INT
+    * used_count      : INT
+    * is_active       : BOOLEAN
+    start_date        : DATETIME
+    end_date          : DATETIME
+    * created_at      : DATETIME
+    * updated_at      : DATETIME
+  }
+
+  entity PROMOTION_USAGE {
+    * id               : UUID <<PK>>
+    --
+    * promotion_id     : BIGINT <<FK>>
+    * order_item_id    : UUID <<FK>>
+    * used_at          : DATETIME
+  }
+
+}
+
+' ─────────────────────────────────────────
+' RELATIONSHIPS
+' ─────────────────────────────────────────
+
+' Identity → Event Management
+USER             ||--o{  EVENT            : "tổ chức (organizer)"
+USER             ||--o{  EVENT_APPROVAL   : "duyệt (admin)"
+USER             ||--o{  VOUCHER          : "tạo voucher"
+
+' Event Management internal
+EVENT            ||--o{  EVENT_APPROVAL   : "chờ duyệt"
+EVENT            ||--o{  SEAT_MAP         : "có sơ đồ ghế"
+SEAT_MAP         ||--o{  TICKET_TIER      : "gồm loại vé"
+SEAT_MAP         ||--o{  SEAT             : "gồm ghế"
+TICKET_TIER      ||--o{  SEAT             : "phân loại ghế"
+
+' Event Management → Booking
+TICKET_TIER      ||--o{  ORDER_ITEM       : "được đặt"
+
+' Identity → Booking
+USER             ||--o{  ORDER            : "đặt vé"
+
+' Booking internal
+ORDER            ||--o{  ORDER_ITEM       : "gồm"
+ORDER            ||--o{  PAYMENT          : "thanh toán"
+ORDER_ITEM       ||--o{  TICKET           : "sinh vé"
+
+' Promotion → Booking
+VOUCHER          ||--o{  VOUCHER_USAGE    : "được dùng"
+ORDER            ||--o{  VOUCHER_USAGE    : "áp voucher"
+USER             ||--o{  VOUCHER_USAGE    : "dùng voucher"
+TICKET_TIER      ||--o{  TICKET_PROMOTION : "có khuyến mãi"
+TICKET_PROMOTION ||--o{  PROMOTION_USAGE  : "được dùng"
+ORDER_ITEM       ||--o{  PROMOTION_USAGE  : "áp promo"
+
+@enduml

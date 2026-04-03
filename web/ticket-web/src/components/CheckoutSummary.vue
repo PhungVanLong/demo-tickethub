@@ -74,12 +74,14 @@
           placeholder="Promo code"
           class="input-field text-sm py-2.5"
           @keydown.enter="applyPromo"
+          :disabled="cart.loading"
         />
         <button
           class="btn-secondary py-2.5 px-4 text-sm whitespace-nowrap"
           @click="applyPromo"
+          :disabled="cart.loading"
         >
-          Apply
+          {{ cart.loading ? 'Checking...' : 'Apply' }}
         </button>
       </div>
       <p v-if="promoMsg" class="text-xs mt-1.5" :class="promoSuccess ? 'text-emerald-400' : 'text-red-400'">
@@ -101,24 +103,32 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useCartStore } from '@/stores/cart'
+import { useBookingStore } from '@/stores/booking.store'
 
-const cart = useCartStore()
+const cart = useBookingStore()
 
 const promoCode   = ref('')
 const promoMsg    = ref('')
 const promoSuccess = ref(false)
 
-const VALID_PROMOS = { TICKET10: '10% off applied!', WELCOME: 'Welcome discount applied!' }
+async function applyPromo() {
+  if (!promoCode.value.trim()) {
+    promoMsg.value = ''
+    promoSuccess.value = false
+    return
+  }
 
-function applyPromo() {
-  const code = promoCode.value.trim().toUpperCase()
-  if (VALID_PROMOS[code]) {
+  const result = await cart.applyVoucher(promoCode.value.trim())
+  
+  if (result) {
     promoSuccess.value = true
-    promoMsg.value     = VALID_PROMOS[code]
+    const discountText = result.discountType === 'PERCENTAGE' 
+      ? `${result.discount}% off applied!` 
+      : `Discount applied!`
+    promoMsg.value = discountText
   } else {
     promoSuccess.value = false
-    promoMsg.value     = 'Invalid promo code'
+    promoMsg.value = cart.error || 'Invalid promo code'
   }
 }
 

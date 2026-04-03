@@ -7,10 +7,11 @@
       <div class="absolute inset-0">
         <Transition name="bg-fade" mode="out-in">
           <img
-            :key="featuredEvents[heroIndex]?.id"
-            :src="featuredEvents[heroIndex]?.banner"
-            :alt="featuredEvents[heroIndex]?.title"
+            :key="heroEvent?.id || 'hero-fallback'"
+            :src="heroEvent?.banner || 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=1600&q=80'"
+            :alt="heroEvent?.title || 'Featured event'"
             class="absolute inset-0 w-full h-full object-cover"
+            @error="handleHeroImageError"
           />
         </Transition>
         <div class="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/80 to-transparent" />
@@ -26,7 +27,7 @@
           </div>
 
           <h1 class="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-4">
-            {{ featuredEvents[heroIndex]?.title }}
+            {{ heroEvent?.title || 'Featured events are being updated' }}
           </h1>
 
           <div class="flex flex-wrap items-center gap-4 mb-6">
@@ -34,23 +35,23 @@
               <svg class="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
               </svg>
-              <span class="text-sm">{{ formatDate(featuredEvents[heroIndex]?.date) }}</span>
+              <span class="text-sm">{{ formatDate(heroEvent?.date) }}</span>
             </div>
             <div class="flex items-center gap-2 text-zinc-300">
               <svg class="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M17.657 16.657 13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
               </svg>
-              <span class="text-sm">{{ featuredEvents[heroIndex]?.venue }}, {{ featuredEvents[heroIndex]?.city }}</span>
+              <span class="text-sm">{{ heroEvent?.venue || 'Venue TBD' }}, {{ heroEvent?.city || 'City TBD' }}</span>
             </div>
           </div>
 
           <p class="text-zinc-400 text-base leading-relaxed mb-8 line-clamp-3">
-            {{ featuredEvents[heroIndex]?.description }}
+            {{ heroEvent?.description || 'We are preparing featured recommendations for you.' }}
           </p>
 
           <div class="flex flex-wrap items-center gap-4">
             <RouterLink
-              :to="`/event/${featuredEvents[heroIndex]?.id}`"
+              :to="heroEvent?.id ? `/event/${heroEvent.id}` : '/'"
               class="btn-primary text-base px-8 py-3.5 glow-violet"
             >
               Get Tickets
@@ -59,7 +60,7 @@
             <div class="flex items-baseline gap-1.5">
               <span class="text-zinc-500 text-sm">From</span>
               <span class="text-2xl font-black text-white">
-                {{ formatPrice(featuredEvents[heroIndex]?.price) }}
+                {{ formatPrice(heroEvent?.price) || 'TBD' }}
               </span>
             </div>
           </div>
@@ -92,6 +93,9 @@
 
     <!-- ===== EVENT LISTING ===== -->
     <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+
+      <!-- Platform Sale Banner -->
+      <PlatformSaleBanner class="mb-8" />
 
       <!-- Header + filters -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -145,8 +149,19 @@
       </div>
 
       <!-- Grid -->
+      <div v-if="eventStore.loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div v-for="i in 6" :key="i" class="card animate-pulse">
+          <div class="h-44 bg-zinc-800 rounded-t-2xl" />
+          <div class="p-4 space-y-3">
+            <div class="h-4 bg-zinc-800 rounded w-3/4" />
+            <div class="h-3 bg-zinc-800 rounded w-1/2" />
+            <div class="h-3 bg-zinc-800 rounded w-2/3" />
+          </div>
+        </div>
+      </div>
+
       <div
-        v-if="filteredEvents.length"
+        v-else-if="filteredEvents.length"
         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
       >
         <EventCard v-for="event in filteredEvents" :key="event.id" :event="event" />
@@ -192,29 +207,96 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import EventCard from '@/components/EventCard.vue'
-import { events, categories } from '@/data/events'
+import PlatformSaleBanner from '@/components/PlatformSaleBanner.vue'
+import { useEventStore } from '@/stores/event.store'
+import { logAction } from '@/services/actionLogger'
 
+const eventStore     = useEventStore()
 const heroIndex      = ref(0)
 const searchQ        = ref('')
 const activeCategory = ref('all')
 const sortBy         = ref('date')
 const emailSub       = ref('')
 
-const featuredEvents = computed(() => events.filter((e) => e.featured))
+// Fetch from API on mount
+onMounted(() => {
+  eventStore.fetchPublished({ size: 100 }, { allowMockFallback: false })
+  eventStore.fetchCategories()
+})
+
+const categories = computed(() => {
+  if (eventStore.categories.length) {
+    return [
+      { label: 'All', value: 'all' },
+      ...eventStore.categories.map((c) => ({ label: c, value: c })),
+    ]
+  }
+  // Fallback from real loaded events only (no static mock import)
+  const set = new Set(eventStore.events.map((e) => e.category).filter(Boolean))
+  return [{ label: 'All', value: 'all' }, ...Array.from(set).map((c) => ({ label: c, value: c }))]
+})
+
+const featuredEvents = computed(() => {
+  const fromApi = eventStore.events.filter((e) => e.featured)
+  if (fromApi.length) return fromApi
+  // If no featured records, fallback to normal events from API.
+  return eventStore.events
+})
+
+const heroEvent = computed(() => featuredEvents.value[heroIndex.value] || featuredEvents.value[0] || null)
+
+function logHero(step, payload = {}) {
+  if (!import.meta.env.DEV) return
+  console.info(`[home.hero] ${step}`, payload)
+  logAction(`HOME_HERO_${step}`, payload)
+}
+
+function handleHeroImageError(e) {
+  const brokenSrc = e?.target?.src
+  logHero('IMAGE_ERROR', {
+    heroId: heroEvent.value?.id,
+    brokenSrc,
+  })
+  e.target.onerror = null
+  e.target.src = 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=1600&q=80'
+}
+
+watch(featuredEvents, (list) => {
+  logHero('FEATURED_LIST_CHANGED', {
+    count: list.length,
+    ids: list.map((x) => x.id).slice(0, 5),
+  })
+  if (!list.length) {
+    heroIndex.value = 0
+    return
+  }
+  if (heroIndex.value >= list.length) {
+    heroIndex.value = 0
+  }
+}, { immediate: true })
+
+watch(heroEvent, (ev) => {
+  logHero('SELECTED', {
+    id: ev?.id,
+    title: ev?.title,
+    banner: ev?.banner,
+  })
+}, { immediate: true })
 
 // Auto-advance hero
 let heroTimer = null
 onMounted(() => {
   heroTimer = setInterval(() => {
-    heroIndex.value = (heroIndex.value + 1) % featuredEvents.value.length
+    if (featuredEvents.value.length)
+      heroIndex.value = (heroIndex.value + 1) % featuredEvents.value.length
   }, 5000)
 })
 onUnmounted(() => clearInterval(heroTimer))
 
 const filteredEvents = computed(() => {
-  let list = [...events]
+  let list = [...eventStore.events]
 
   if (activeCategory.value !== 'all') {
     list = list.filter((e) => e.category === activeCategory.value)
@@ -223,15 +305,15 @@ const filteredEvents = computed(() => {
     const q = searchQ.value.toLowerCase()
     list = list.filter(
       (e) =>
-        e.title.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q) ||
-        e.city.toLowerCase().includes(q)
+        (e.title  ?? '').toLowerCase().includes(q) ||
+        (e.venue  ?? '').toLowerCase().includes(q) ||
+        (e.city   ?? '').toLowerCase().includes(q)
     )
   }
 
-  if (sortBy.value === 'price_asc')  list.sort((a, b) => a.price - b.price)
-  if (sortBy.value === 'price_desc') list.sort((a, b) => b.price - a.price)
-  if (sortBy.value === 'rating')     list.sort((a, b) => b.rating - a.rating)
+  if (sortBy.value === 'price_asc')  list.sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
+  if (sortBy.value === 'price_desc') list.sort((a, b) => (b.price ?? 0) - (a.price ?? 0))
+  if (sortBy.value === 'rating')     list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
   if (sortBy.value === 'date')       list.sort((a, b) => new Date(a.date) - new Date(b.date))
 
   return list

@@ -114,13 +114,23 @@ const props = defineProps({
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const dateObj = computed(() => new Date(props.event.date))
-const monthShort = computed(() => MONTHS[dateObj.value.getUTCMonth()])
-const day = computed(() => String(dateObj.value.getUTCDate()).padStart(2, '0'))
+const monthShort = computed(() => {
+  const m = dateObj.value.getUTCMonth()
+  return Number.isFinite(m) ? MONTHS[m] : 'TBD'
+})
+const day = computed(() => {
+  const d = dateObj.value.getUTCDate()
+  return Number.isFinite(d) ? String(d).padStart(2, '0') : '--'
+})
 const formattedDate = computed(() =>
-  dateObj.value.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
+  Number.isNaN(dateObj.value.getTime())
+    ? 'Date TBD'
+    : dateObj.value.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 )
 const soldOutPercent = computed(() =>
-  Math.round((props.event.sold / props.event.capacity) * 100)
+  props.event.capacity > 0
+    ? Math.round(((props.event.sold ?? 0) / props.event.capacity) * 100)
+    : 0
 )
 
 function formatPrice(val) {

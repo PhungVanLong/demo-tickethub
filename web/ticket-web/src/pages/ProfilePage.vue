@@ -130,17 +130,17 @@
                     @click="viewTicket(order)"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    View Ticket
+                    View Tickets
                   </button>
-                  <button class="btn-ghost py-2 px-3 text-sm">
+                  <RouterLink :to="`/order/${order.orderId || order.id}`" class="btn-ghost py-2 px-3 text-sm">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Download
-                  </button>
+                    Details
+                  </RouterLink>
                 </div>
               </div>
 
               <p class="text-xs text-zinc-600 mt-2">
-                Order #{{ order.id }} · Paid via {{ order.paymentMethod }} · {{ formatDateTime(order.bookedAt) }}
+                Order #{{ order.orderCode || order.displayId || order.id }} · Paid via {{ order.paymentMethod }} · {{ formatDateTime(order.bookedAt) }}
               </p>
             </div>
           </div>
@@ -171,7 +171,7 @@
 
           <div class="card p-6">
             <h2 class="font-bold text-white text-lg mb-5">Change Password</h2>
-            <div class="space-y-4">
+            <form class="space-y-4" @submit.prevent>
               <div>
                 <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Current Password</label>
                 <input type="password" placeholder="••••••••" class="input-field" />
@@ -184,8 +184,8 @@
                 <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Confirm Password</label>
                 <input type="password" placeholder="••••••••" class="input-field" />
               </div>
-              <button class="btn-primary">Update Password</button>
-            </div>
+              <button type="submit" class="btn-primary">Update Password</button>
+            </form>
           </div>
 
           <div class="card p-6 lg:col-span-2">
@@ -218,45 +218,66 @@
       <div
         v-if="selectedOrder"
         class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-        @click.self="selectedOrder = null"
+        @click.self="closeTicketModal"
       >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-slide-up">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-3xl max-w-4xl w-full p-6 shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
           <div class="text-center mb-6">
-            <h3 class="font-black text-white text-xl">Your E-Ticket</h3>
+            <h3 class="font-black text-white text-xl">Your E-Tickets</h3>
             <p class="text-zinc-500 text-sm mt-1">{{ selectedOrder.eventTitle }}</p>
+            <p class="text-zinc-600 text-xs mt-1">Order #{{ selectedOrder.orderCode || selectedOrder.displayId || selectedOrder.id }}</p>
           </div>
 
-          <!-- QR code placeholder -->
-          <div class="bg-white rounded-2xl p-4 mb-4">
-            <div class="grid grid-cols-7 gap-0.5 aspect-square">
-              <div v-for="i in 49" :key="i"
-                class="rounded-sm"
-                :class="qrMatrix[i-1] ? 'bg-zinc-900' : 'bg-white'"
-              />
+          <div v-if="ticketModalLoading" class="py-16 flex flex-col items-center gap-4">
+            <div class="w-10 h-10 rounded-full border-4 border-violet-600 border-t-transparent animate-spin" />
+            <p class="text-sm text-zinc-500">Loading tickets…</p>
+          </div>
+
+          <div v-else-if="ticketModalError" class="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300 mb-6">
+            {{ ticketModalError }}
+          </div>
+
+          <div v-else-if="selectedTickets.length" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div v-for="ticket in selectedTickets" :key="ticket.id" class="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 space-y-4">
+              <TicketQrCode :data="ticket.qrCodeData" :size="220" />
+
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Ticket</span>
+                  <span class="font-mono text-white text-right">{{ ticket.ticketCode }}</span>
+                </div>
+                <div class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Type</span>
+                  <span class="text-white text-right">{{ ticket.tierName }}</span>
+                </div>
+                <div class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Date</span>
+                  <span class="text-white text-right">{{ formatDate(selectedOrder.eventDate) }}</span>
+                </div>
+                <div class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Venue</span>
+                  <span class="text-white text-right max-w-[60%]">{{ selectedOrder.venue }}</span>
+                </div>
+                <div v-if="ticket.seatLabel" class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Seat</span>
+                  <span class="text-white text-right">{{ ticket.seatLabel }}</span>
+                </div>
+                <div class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Status</span>
+                  <span class="text-white capitalize">{{ ticket.status }}</span>
+                </div>
+              </div>
+
+              <button class="btn-primary w-full justify-center" @click="downloadTicket(ticket)">
+                Download QR
+              </button>
             </div>
           </div>
 
-          <div class="text-center mb-4">
-            <p class="text-xs text-zinc-500">ORDER ID</p>
-            <p class="font-mono font-bold text-white text-sm tracking-wider">{{ selectedOrder.id }}</p>
+          <div v-else class="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-8 text-center text-sm text-zinc-500 mb-6">
+            No issued tickets were returned by the backend for this order yet.
           </div>
 
-          <div class="space-y-2 mb-6 text-sm">
-            <div class="flex justify-between">
-              <span class="text-zinc-500">Date</span>
-              <span class="text-white">{{ formatDate(selectedOrder.eventDate) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-zinc-500">Venue</span>
-              <span class="text-white text-right max-w-[60%]">{{ selectedOrder.venue }}</span>
-            </div>
-            <div v-for="t in selectedOrder.tickets" :key="t.type" class="flex justify-between">
-              <span class="text-zinc-500">{{ t.type }}</span>
-              <span class="text-white">× {{ t.qty }}</span>
-            </div>
-          </div>
-
-          <button class="btn-primary w-full justify-center" @click="selectedOrder = null">Close</button>
+          <button class="btn-primary w-full justify-center" @click="closeTicketModal">Close</button>
         </div>
       </div>
     </Transition>
@@ -264,26 +285,38 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
-import { useAuthStore } from '@/stores/auth'
-import { orders }       from '@/data/orders'
+import { ref, computed, reactive, onMounted } from 'vue'
+import { useAuthStore }    from '@/stores/auth.store'
+import { useBookingStore } from '@/stores/booking.store'
+import TicketQrCode from '@/components/TicketQrCode.vue'
+import { downloadTicketQrPng } from '@/utils/ticketQr'
 
-const auth = useAuthStore()
+const auth    = useAuthStore()
+const booking = useBookingStore()
 
-const activeTab   = ref('tickets')
+// Fetch real orders on mount (non-blocking; template stays reactive)
+onMounted(() => booking.fetchMyOrders())
+
+// Alias so the template doesn't need changes
+const orders = computed(() => booking.myOrders)
+
+const activeTab     = ref('tickets')
 const selectedOrder = ref(null)
+const selectedTickets = ref([])
+const ticketModalLoading = ref(false)
+const ticketModalError = ref('')
 
 const tabs = computed(() => [
-  { id: 'tickets',  label: 'My Tickets', count: orders.length },
-  { id: 'settings', label: 'Settings'                         },
+  { id: 'tickets',  label: 'My Tickets', count: orders.value.length },
+  { id: 'settings', label: 'Settings'                               },
 ])
 
 const upcomingCount = computed(() =>
-  orders.filter((o) => new Date(o.eventDate) >= new Date() && o.status === 'confirmed').length
+  orders.value.filter((o) => new Date(o.eventDate) >= new Date() && o.status === 'confirmed').length
 )
 
 const totalSpent = computed(() => {
-  const sum = orders.reduce((s, o) => s + (o.status !== 'cancelled' ? o.total : 0), 0)
+  const sum = orders.value.reduce((s, o) => s + (o.status !== 'cancelled' ? (o.total ?? 0) : 0), 0)
   return new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(sum)
 })
 
@@ -294,33 +327,68 @@ const notifPrefs = reactive([
   { id: 'updates',   label: 'Event Updates',            desc: 'When event details change',            enabled: true  },
 ])
 
-const qrMatrix = Array.from({ length: 49 }, () => Math.random() > 0.35)
-
-function viewTicket(order) {
+async function viewTicket(order) {
   selectedOrder.value = order
+  selectedTickets.value = []
+  ticketModalError.value = ''
+  ticketModalLoading.value = true
+
+  try {
+    selectedTickets.value = await booking.fetchOrderTickets(order.orderId ?? order.id, true)
+  } catch {
+    ticketModalError.value = booking.error || 'Failed to load issued tickets'
+  } finally {
+    ticketModalLoading.value = false
+  }
+}
+
+function closeTicketModal() {
+  selectedOrder.value = null
+  selectedTickets.value = []
+  ticketModalError.value = ''
+  ticketModalLoading.value = false
+}
+
+async function downloadTicket(ticket) {
+  const latestTicket = await booking.downloadTicket(ticket.id)
+  const ticketToDownload = latestTicket || ticket
+
+  if (!ticketToDownload?.qrCodeData) {
+    alert(booking.error || 'Ticket QR data is unavailable')
+    return
+  }
+
+  try {
+    await downloadTicketQrPng(ticketToDownload)
+  } catch {
+    alert('Failed to generate ticket QR image')
+  }
 }
 
 function statusBadge(status) {
   if (status === 'confirmed') return 'badge-green'
   if (status === 'pending')   return 'badge-yellow'
   if (status === 'cancelled') return 'badge-red'
+  if (status === 'refunded')  return 'badge-blue'
   return 'badge-blue'
 }
 function statusLabel(status) {
-  return { confirmed: 'Confirmed', pending: 'Pending', cancelled: 'Cancelled' }[status] ?? status
+  return { confirmed: 'Confirmed', pending: 'Pending', cancelled: 'Cancelled', refunded: 'Refunded' }[status] ?? status
 }
 
 function formatDate(d) {
+  if (!d) return ''
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 }
 function formatDateTime(d) {
+  if (!d) return ''
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function formatJoinDate(d) {
   return d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : ''
 }
 function formatPrice(val) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
 </script>
 
