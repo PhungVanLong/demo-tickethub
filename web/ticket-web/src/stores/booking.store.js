@@ -103,8 +103,52 @@ export const useBookingStore = defineStore('booking', () => {
     const serviceFee = computed(() =>
         quote.value?.serviceFee ?? Math.round(subtotal.value * 0.05)
     )
+    const discountAmount = computed(() => {
+        const quoteDiscount = Number(
+            quote.value?.discountAmount
+            ?? quote.value?.discount
+            ?? quote.value?.voucherDiscount
+            ?? 0
+        )
+        if (quoteDiscount > 0) {
+            return Math.max(0, Math.min(quoteDiscount, subtotal.value))
+        }
+
+        const applied = appliedVoucher.value
+        if (!applied) return 0
+
+        const type = String(applied.discountType || '').toUpperCase()
+        const rawDiscount = Number(applied.discount || 0)
+        if (!Number.isFinite(rawDiscount) || rawDiscount <= 0) return 0
+
+        if (type === 'PERCENTAGE' || type === 'PERCENT') {
+            const percentValue = Math.max(0, Math.min(rawDiscount, 100))
+            return Math.round((subtotal.value * percentValue) / 100)
+        }
+
+        return Math.max(0, Math.min(rawDiscount, subtotal.value))
+    })
+    const subtotalAfterDiscount = computed(() =>
+        Math.max(0, subtotal.value - discountAmount.value)
+    )
     const grandTotal = computed(() =>
-        quote.value?.total ?? (subtotal.value + serviceFee.value)
+        (() => {
+            const quoteTotal = Number(quote.value?.total)
+            const quoteDiscount = Number(
+                quote.value?.discountAmount
+                ?? quote.value?.discount
+                ?? quote.value?.voucherDiscount
+                ?? 0
+            )
+            const hasAppliedVoucher = Boolean(appliedVoucher.value?.code)
+
+            // Avoid showing stale total from a pre-voucher quote.
+            if (Number.isFinite(quoteTotal) && (!hasAppliedVoucher || quoteDiscount > 0)) {
+                return quoteTotal
+            }
+
+            return subtotalAfterDiscount.value + serviceFee.value
+        })()
     )
 
     // ── Actions ────────────────────────────────────────────────────────────────
@@ -167,6 +211,10 @@ export const useBookingStore = defineStore('booking', () => {
                     quantity: s.qty,
                 })),
             }
+            if (appliedVoucher.value?.code) {
+                payload.voucherCode = appliedVoucher.value.code
+                payload.code = appliedVoucher.value.code
+            }
             quote.value = await bookingService.quote(payload)
             logAction('BOOKING_QUOTE_SUCCESS', { eventId: event.value?.id, total: quote.value?.total })
         } catch (e) {
@@ -196,6 +244,14 @@ export const useBookingStore = defineStore('booking', () => {
                     ticketTierId: s.ticketType.id,
                     quantity: s.qty,
                 })),
+            }
+
+            if (appliedVoucher.value?.code) {
+                payload.voucherCode = appliedVoucher.value.code
+                payload.code = appliedVoucher.value.code
+            }
+            if (appliedVoucher.value?.voucherId) {
+                payload.voucherId = appliedVoucher.value.voucherId
             }
 
             // Include purchaser info if available (for email delivery, invoices, etc.)
@@ -464,10 +520,18 @@ export const useBookingStore = defineStore('booking', () => {
                 discountType: data?.discountType || 'PERCENTAGE',
                 voucherId: data?.id || data?.voucherId,
             }
+
+            // Drop stale quote first so UI updates immediately when Apply is clicked.
+            quote.value = null
+
+            // Recalculate quote with voucher for authoritative totals when backend supports it.
+            await fetchQuote()
+
             logAction('VOUCHER_APPLIED', { code, discount: appliedVoucher.value.discount })
             return appliedVoucher.value
         } catch (e) {
             appliedVoucher.value = null
+            quote.value = null
             error.value = extractApiError(e, 'Invalid promo code').message
             logAction('VOUCHER_APPLY_FAILED', { code, message: error.value })
             return null
@@ -490,7 +554,7 @@ export const useBookingStore = defineStore('booking', () => {
         event, selections, quote, order, paymentIntent, myOrders, ticketsByOrder, ticketsById, purchaserInfo,
         appliedVoucher,
         loading, error,
-        totalTickets, subtotal, serviceFee, grandTotal,
+        totalTickets, subtotal, discountAmount, subtotalAfterDiscount, serviceFee, grandTotal,
         setBooking, setPurchaserInfo, fetchQuote, createOrder, createPaymentIntent,
         fakeWebhook, fetchMyOrders, fetchOrderById, fetchOrderTickets, fetchTicketById,
         useTicket, downloadTicket, cancelOrder, applyVoucher, clear,

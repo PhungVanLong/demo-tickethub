@@ -13,6 +13,24 @@ function readBackendMessage(data) {
         if (first?.message) return String(first.message)
     }
 
+    // Common bean-validation shape: { errors: { fieldName: 'message' } }
+    if (data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors)) {
+        const firstEntry = Object.entries(data.errors).find(([, value]) => value != null && value !== '')
+        if (firstEntry) {
+            const [field, value] = firstEntry
+            if (Array.isArray(value) && value.length) return `${field}: ${value[0]}`
+            if (typeof value === 'string') return `${field}: ${value}`
+        }
+    }
+
+    // Spring-like validation details: [{ field, defaultMessage }]
+    if (Array.isArray(data.violations) && data.violations.length) {
+        const first = data.violations[0]
+        if (first?.field && first?.message) return `${first.field}: ${first.message}`
+        if (first?.field && first?.defaultMessage) return `${first.field}: ${first.defaultMessage}`
+        if (first?.message) return String(first.message)
+    }
+
     return ''
 }
 
