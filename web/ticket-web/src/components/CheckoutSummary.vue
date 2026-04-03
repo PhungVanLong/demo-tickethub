@@ -48,6 +48,10 @@
         <span>Subtotal</span>
         <span class="tabular-nums">{{ formatPrice(cart.subtotal) }}</span>
       </div>
+      <div v-if="cart.discountAmount > 0" class="flex items-center justify-between text-emerald-400">
+        <span>Discount</span>
+        <span class="tabular-nums">-{{ formatPrice(cart.discountAmount) }}</span>
+      </div>
       <div class="flex items-center justify-between text-zinc-400">
         <div class="flex items-center gap-1">
           <span>Service Fee</span>
@@ -122,9 +126,11 @@ async function applyPromo() {
   
   if (result) {
     promoSuccess.value = true
-    const discountText = result.discountType === 'PERCENTAGE' 
-      ? `${result.discount}% off applied!` 
-      : `Discount applied!`
+    const discountType = String(result.discountType || '').toUpperCase()
+    const isPercent = discountType === 'PERCENTAGE' || discountType === 'PERCENT'
+    const discountText = isPercent
+      ? `${result.discount}% off applied!`
+      : `${formatPrice(result.discount)} discount applied!`
     promoMsg.value = discountText
   } else {
     promoSuccess.value = false

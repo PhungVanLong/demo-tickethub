@@ -411,21 +411,25 @@ async function handleCreateVoucher() {
   }
 
   try {
-    const payload = {
-      name: formData.value.name,
-      code: normalizedCode,
-      discountType: formData.value.discountType,
-      discountValue: formData.value.discountValue,
-      minOrderValue: formData.value.minOrderValue || 0,
-      usageLimit: formData.value.usageLimit,
-      validFrom: toBackendDateTime(formData.value.validFrom),
-      validUntil: toBackendDateTime(formData.value.validUntil)
-    }
-
     const selectedEventId = Number(formData.value.eventId)
     const eventIdPayload = Number.isFinite(selectedEventId) && selectedEventId > 0
       ? selectedEventId
       : formData.value.eventId
+
+    const normalizedMinOrderValue = Number(formData.value.minOrderValue)
+    const hasMinOrderValue = Number.isFinite(normalizedMinOrderValue) && normalizedMinOrderValue > 0
+
+    const payload = {
+      eventId: eventIdPayload,
+      name: formData.value.name,
+      code: normalizedCode,
+      discountType: formData.value.discountType,
+      discountValue: formData.value.discountValue,
+      minOrderValue: hasMinOrderValue ? normalizedMinOrderValue : undefined,
+      usageLimit: formData.value.usageLimit,
+      validFrom: toBackendDateTime(formData.value.validFrom),
+      validUntil: toBackendDateTime(formData.value.validUntil)
+    }
 
     await voucherStore.createEventVoucher(eventIdPayload, payload)
     resetForm()

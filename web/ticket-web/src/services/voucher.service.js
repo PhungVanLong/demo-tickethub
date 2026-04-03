@@ -6,6 +6,12 @@ function pruneEmptyFields(obj) {
   )
 }
 
+function toOptionalNumber(value) {
+  if (value === '' || value === null || value === undefined) return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 function normalizeDateTime(value) {
   const raw = String(value || '').trim()
   if (!raw) return ''
@@ -27,9 +33,9 @@ function normalizeCreatePayload(payload) {
     code,
     name,
     discountType: String(payload?.discountType || '').trim().toUpperCase(),
-    discountValue: Number(payload?.discountValue ?? 0),
-    usageLimit: Number(payload?.usageLimit ?? 0),
-    minOrderValue: Number(payload?.minOrderValue ?? 0),
+    discountValue: toOptionalNumber(payload?.discountValue),
+    usageLimit: toOptionalNumber(payload?.usageLimit),
+    minOrderValue: toOptionalNumber(payload?.minOrderValue),
     validFrom: normalizeDateTime(payload?.validFrom),
     validUntil: normalizeDateTime(payload?.validUntil),
   }
@@ -49,16 +55,49 @@ function buildCreatePayloadCandidates(payload) {
   ].filter(Boolean)))
 
   for (const discountType of typeCandidates) {
-    candidates.push(pruneEmptyFields({
+    const withEventId = {
       ...normalized,
+      eventId: normalized?.eventId,
+    }
+
+    candidates.push(pruneEmptyFields({
+      ...withEventId,
       discountType,
     }))
 
     candidates.push(pruneEmptyFields({
-      ...normalized,
+      ...withEventId,
       discountType,
       validFrom: withSpaceDateTime(normalized.validFrom),
       validUntil: withSpaceDateTime(normalized.validUntil),
+    }))
+
+    // Compatibility for backends using validTo + minOrderAmount naming.
+    candidates.push(pruneEmptyFields({
+      ...withEventId,
+      discountType,
+      validTo: normalized.validUntil,
+      validUntil: undefined,
+      minOrderAmount: normalized.minOrderValue,
+      minOrderValue: undefined,
+    }))
+
+    candidates.push(pruneEmptyFields({
+      ...withEventId,
+      discountType,
+      validTo: withSpaceDateTime(normalized.validUntil),
+      validUntil: undefined,
+      validFrom: withSpaceDateTime(normalized.validFrom),
+      minOrderAmount: normalized.minOrderValue,
+      minOrderValue: undefined,
+    }))
+
+    // Compatibility for backends using maxUsage naming.
+    candidates.push(pruneEmptyFields({
+      ...withEventId,
+      discountType,
+      maxUsage: normalized.usageLimit,
+      usageLimit: undefined,
     }))
   }
 
