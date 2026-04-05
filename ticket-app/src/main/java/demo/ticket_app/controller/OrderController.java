@@ -18,8 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import demo.ticket_app.config.SecurityUtils;
+import demo.ticket_app.dto.order.OrderResponse;
 import demo.ticket_app.entity.Order;
 import demo.ticket_app.entity.OrderStatus;
+import demo.ticket_app.entity.User;
 import demo.ticket_app.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,9 +43,10 @@ public class OrderController {
     }
 
     @GetMapping("/{orderId}")
-    public ResponseEntity<Order> getOrderById(@PathVariable UUID orderId) {
-        Order order = orderService.getOrderById(orderId);
-        return ResponseEntity.ok(order);
+    public ResponseEntity<OrderResponse> getOrderById(@PathVariable UUID orderId) {
+        User currentUser = securityUtils.getCurrentUser();
+        Order order = orderService.getOrderByIdForRequester(orderId, currentUser.getId(), currentUser.getRole());
+        return ResponseEntity.ok(OrderResponse.from(order));
     }
 
     @GetMapping("/user/{userId}")

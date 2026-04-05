@@ -1,17 +1,21 @@
 package demo.ticket_app.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
 import demo.ticket_app.entity.Order;
 import demo.ticket_app.entity.OrderStatus;
+import demo.ticket_app.entity.UserRole;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +32,18 @@ public class OrderService {
     public Order getOrderById(UUID orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+    }
+
+    public Order getOrderByIdForRequester(UUID orderId, UUID requesterId, UserRole requesterRole) {
+        Order order = getOrderById(orderId);
+        boolean isAdmin = requesterRole == UserRole.ADMIN;
+        boolean isOwner = order.getUserId().equals(requesterId);
+
+        if (!isAdmin && !isOwner) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have permission to view this order");
+        }
+
+        return order;
     }
 
     public List<Order> getOrdersByUserId(UUID userId) {
