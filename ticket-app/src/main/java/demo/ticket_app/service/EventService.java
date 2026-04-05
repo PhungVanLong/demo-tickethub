@@ -13,8 +13,10 @@ import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import demo.ticket_app.dto.common.PageResponse;
 import demo.ticket_app.dto.event.CreateEventRequest;
@@ -209,9 +211,11 @@ public class EventService {
         event.setUpdatedAt(LocalDateTime.now());
 
         userRepository.findById(event.getOrganizerId()).ifPresent(user -> {
-            user.setRole(demo.ticket_app.entity.UserRole.ORGANIZER);
-            user.setUpdatedAt(LocalDateTime.now());
-            userRepository.save(user);
+            if (user.getRole() == UserRole.CUSTOMER) {
+                user.setRole(UserRole.ORGANIZER);
+                user.setUpdatedAt(LocalDateTime.now());
+                userRepository.save(user);
+            }
         });
 
         eventApprovalRepository.save(EventApproval.builder()
@@ -234,11 +238,18 @@ public class EventService {
         event.setIsPublished(false);
         event.setUpdatedAt(LocalDateTime.now());
 
-        userRepository.findById(event.getOrganizerId()).ifPresent(user -> {
-            user.setRole(demo.ticket_app.entity.UserRole.CUSTOMER);
-            user.setUpdatedAt(LocalDateTime.now());
-            userRepository.save(user);
-        });
+        Event rejectedEvent = eventRepository.save(event);
+
+        long publishedEvents = eventRepository.countByOrganizerIdAndStatus(event.getOrganizerId(), EventStatus.PUBLISHED);
+        if (publishedEvents == 0) {
+            userRepository.findById(event.getOrganizerId()).ifPresent(user -> {
+                if (user.getRole() == UserRole.ORGANIZER) {
+                    user.setRole(UserRole.CUSTOMER);
+                    user.setUpdatedAt(LocalDateTime.now());
+                    userRepository.save(user);
+                }
+            });
+        }
 
         eventApprovalRepository.save(EventApproval.builder()
                 .eventId(eventId)
@@ -248,9 +259,22 @@ public class EventService {
                 .decidedAt(LocalDateTime.now())
                 .build());
 
-        Event rejectedEvent = eventRepository.save(event);
         log.info("Rejected event with id: {}", eventId);
         return rejectedEvent;
+    }
+
+    @Transactional(readOnly = true)
+    public void validateOrganizerCanManageStaffForEvent(Long eventId, UUID organizerId) {
+        Objects.requireNonNull(organizerId, "organizerId is required");
+        Event event = getEventById(eventId);
+
+        if (!organizerId.equals(event.getOrganizerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have permission to manage staff for this event");
+        }
+
+        if (event.getStatus() != EventStatus.PUBLISHED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Staff accounts can only be created after event approval");
+        }
     }
 
     public void deleteEvent(Long eventId, UUID requesterId) {

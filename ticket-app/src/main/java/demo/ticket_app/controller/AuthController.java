@@ -1,6 +1,7 @@
 package demo.ticket_app.controller;
 
 import demo.ticket_app.dto.auth.AuthResponse;
+import demo.ticket_app.dto.auth.GoogleAuthRequest;
 import demo.ticket_app.dto.auth.LoginRequest;
 import demo.ticket_app.dto.auth.RegisterRequest;
 import demo.ticket_app.service.AuthService;
@@ -30,6 +31,13 @@ public class AuthController {
     public ResponseEntity<AuthResponse> loginUser(@Valid @RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request);
         log.info("User logged in: {}", response.email());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> loginWithGoogle(@Valid @RequestBody GoogleAuthRequest request) {
+        AuthResponse response = authService.loginWithGoogle(request);
+        log.info("Google login success: {}", response.email());
         return ResponseEntity.ok(response);
     }
 }

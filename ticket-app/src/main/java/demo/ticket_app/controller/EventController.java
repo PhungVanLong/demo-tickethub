@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import demo.ticket_app.config.SecurityUtils;
+import demo.ticket_app.dto.auth.CreateStaffAccountRequest;
+import demo.ticket_app.dto.auth.CreateStaffAccountResponse;
 import demo.ticket_app.dto.common.PageResponse;
 import demo.ticket_app.dto.event.CreateEventRequest;
 import demo.ticket_app.dto.event.DecideEventRequest;
@@ -24,7 +26,9 @@ import demo.ticket_app.dto.event.EventDetailResponse;
 import demo.ticket_app.dto.event.EventListItemResponse;
 import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.EventStatus;
+import demo.ticket_app.entity.User;
 import demo.ticket_app.service.EventService;
+import demo.ticket_app.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 public class EventController {
 
     private final EventService eventService;
+    private final UserService userService;
     private final SecurityUtils securityUtils;
 
     @GetMapping
@@ -137,6 +142,16 @@ public class EventController {
         UUID requesterId = securityUtils.getCurrentUserId();
         eventService.deleteEvent(eventId, requesterId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{eventId}/staff")
+    public ResponseEntity<CreateStaffAccountResponse> createStaffForEvent(
+            @PathVariable Long eventId,
+            @Valid @RequestBody CreateStaffAccountRequest request) {
+        User organizer = securityUtils.getCurrentUser();
+        eventService.validateOrganizerCanManageStaffForEvent(eventId, organizer.getId());
+        CreateStaffAccountResponse created = userService.createStaffAccountByOrganizer(organizer, request);
+        return ResponseEntity.ok(created);
     }
 
     @GetMapping("/search")

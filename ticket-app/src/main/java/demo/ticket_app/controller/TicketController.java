@@ -65,7 +65,7 @@ public class TicketController {
      */
     @PostMapping("/{ticketId}/use")
     public ResponseEntity<TicketResponse> useTicket(@PathVariable UUID ticketId) {
-        Ticket ticket = ticketService.useTicket(ticketId);
+        Ticket ticket = ticketService.useTicket(ticketId, securityUtils.getCurrentUser());
         return ResponseEntity.ok(ticketService.toEnrichedResponse(ticket));
     }
 

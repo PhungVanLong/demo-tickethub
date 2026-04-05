@@ -138,6 +138,7 @@ public class UserService {
         return updated;
     }
 
+    @SuppressWarnings("null")
     public CreateStaffAccountResponse createStaffAccountByOrganizer(User organizer, CreateStaffAccountRequest request) {
         if (organizer.getRole() != UserRole.ORGANIZER) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only organizer can create staff accounts");
@@ -154,11 +155,12 @@ public class UserService {
                 .fullName(request.fullName())
                 .phone(request.phone())
                 .role(UserRole.STAFF)
+            .organizerId(organizer.getId())
                 .isActive(true)
                 .isVerified(true)
                 .build();
 
-        User saved = userRepository.save(staff);
+        User saved = Objects.requireNonNull(userRepository.save(staff), "saved staff must not be null");
         log.info("Organizer {} created staff account {}", organizer.getId(), saved.getId());
 
         return new CreateStaffAccountResponse(

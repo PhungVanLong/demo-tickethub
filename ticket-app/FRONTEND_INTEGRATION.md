@@ -20,6 +20,29 @@ Authorization: Bearer <accessToken>
 - `Content-Type`: `application/json`
 - Time format: ISO-8601 UTC, example `2026-06-15T19:30:00Z`
 
+### Google Sign-In (new)
+
+- Endpoint: `POST /api/auth/google`
+- Request body:
+
+```json
+{
+  "idToken": "<google_id_token_from_frontend_sdk>"
+}
+```
+
+- Behavior:
+- Verify Google ID token against backend `google.oauth.client-id`.
+- If email exists: update profile (`fullName`, `avatarUrl`, verified flag) and return JWT.
+- If email does not exist: create new `CUSTOMER` account and return JWT.
+- Claims mapping used by backend:
+- `email`: from Google token email claim (required).
+- `fullName` mapping order: `name` -> (`given_name` + `family_name`) -> `email` fallback.
+- `avatarUrl`: from Google `picture` claim (can be null if claim is not present).
+- `isVerified`: resolved from `email_verified` claim.
+
+- Response shape: same as `/api/auth/login` (`AuthResponse`).
+
 ### Error response (standard)
 
 ```json
@@ -600,13 +623,15 @@ Authorization rule:
 - `STAFF` can scan/mark tickets as used (dedicated scanning account).
 - `ADMIN` can mark any ticket used.
 - `CUSTOMER` and `ORGANIZER` are not allowed to call this endpoint.
+- For demo: scan is not restricted by event start/end time.
+- `STAFF` can only scan tickets that belong to events of their linked organizer.
 
 Status codes:
 
 - `200`: Success, ticket marked used
 - `400`: Ticket already used or not in ACTIVE status
 - `401`: Missing/invalid token
-- `403`: Not owner/admin of ticket
+- `403`: Not allowed role or staff scans ticket from another organizer
 - `404`: Ticket ID not found
 
 ### 8.7 Organizer creates staff account (scan account)
@@ -646,6 +671,59 @@ Status codes:
 - `400`: Email already exists / invalid request
 - `401`: Missing or invalid token
 - `403`: Current user is not organizer
+
+### 8.8 Organizer creates staff account inside an approved event (new)
+
+`POST /api/events/{eventId}/staff` (organizer auth required)
+
+Purpose:
+
+- Create staff account directly from event management screen.
+- Enforce event-level ownership and approval state before account creation.
+
+Request:
+
+```json
+{
+  "email": "staff02@tickethub.com",
+  "password": "Staff@123456",
+  "fullName": "Gate Staff 02",
+  "phone": "+84909876543"
+}
+```
+
+Response:
+
+```json
+{
+  "userId": "uuid",
+  "email": "staff02@tickethub.com",
+  "fullName": "Gate Staff 02",
+  "role": "STAFF",
+  "active": true
+}
+```
+
+Business rules:
+
+- Organizer must be owner of `{eventId}`.
+- Event status must be `PUBLISHED` (already approved by admin).
+- If event is not approved yet, API returns `400`.
+- If organizer is not owner of event, API returns `403`.
+
+Status codes:
+
+- `200`: Staff account created
+- `400`: Event not approved / email already exists / invalid request
+- `401`: Missing or invalid token
+- `403`: Event does not belong to current organizer
+- `404`: Event not found
+
+Frontend recommendation:
+
+- In event detail/management page, show "Create Staff" button only when event status is `PUBLISHED`.
+- Call `POST /api/events/{eventId}/staff` as default flow for organizer event pages.
+- Keep `POST /api/users/staff` for global organizer account management screen.
 
 ### 8.6 FE ticket display checklist
 

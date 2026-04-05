@@ -5,14 +5,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import demo.ticket_app.dto.ticket.TicketResponse;
+import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.OrderItem;
 import demo.ticket_app.entity.Ticket;
 import demo.ticket_app.entity.TicketStatus;
 import demo.ticket_app.entity.TicketTier;
+import demo.ticket_app.entity.User;
+import demo.ticket_app.entity.UserRole;
 import demo.ticket_app.repository.EventRepository;
 import demo.ticket_app.repository.OrderItemRepository;
 import demo.ticket_app.repository.SeatMapRepository;
@@ -108,10 +113,13 @@ public class TicketService {
     /**
      * Mark ticket as used
      */
-    public Ticket useTicket(UUID ticketId) {
+    public Ticket useTicket(UUID ticketId, User requester) {
         UUID safeTicketId = Objects.requireNonNull(ticketId, "ticketId must not be null");
         Ticket ticket = ticketRepository.findById(safeTicketId)
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found"));
+
+        Event event = resolveEventByTicket(ticket);
+        enforceScanPermission(event, requester);
 
         if (ticket.getTicketStatus() != TicketStatus.ACTIVE) {
             throw new IllegalArgumentException("Ticket is not active");
@@ -121,6 +129,62 @@ public class TicketService {
         ticket.setUsedAt(java.time.LocalDateTime.now());
 
         return ticketRepository.save(ticket);
+    }
+
+    private void enforceScanPermission(Event event, User requester) {
+        if (requester.getRole() == UserRole.ADMIN) {
+            return;
+        }
+
+        if (requester.getRole() != UserRole.STAFF) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only staff or admin can scan tickets");
+        }
+
+        UUID staffOrganizerId = requester.getOrganizerId();
+        if (staffOrganizerId == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Staff account is not linked to any organizer");
+        }
+
+        UUID eventOrganizerId = event.getOrganizerId();
+        if (!staffOrganizerId.equals(eventOrganizerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Staff cannot scan ticket from another organizer");
+        }
+    }
+
+    private Event resolveEventByTicket(Ticket ticket) {
+        UUID orderItemId = Objects.requireNonNull(ticket.getOrderItemId(), "orderItemId must not be null");
+        OrderItem orderItem = ticket.getOrderItem() != null
+                ? ticket.getOrderItem()
+                : orderItemRepository.findById(orderItemId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found"));
+
+        TicketTier tier = orderItem.getTicketTier();
+        Long tierId = orderItem.getTicketTierId();
+        if (tier == null && tierId != null) {
+            tier = ticketTierRepository.findById(tierId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket tier not found"));
+        }
+        if (tier == null || tier.getSeatMapId() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Seat map not found for ticket tier");
+        }
+
+        Long seatMapId = Objects.requireNonNull(tier.getSeatMapId(), "seatMapId must not be null");
+        var seatMap = tier.getSeatMap() != null
+                ? tier.getSeatMap()
+                : seatMapRepository.findById(seatMapId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seat map not found"));
+
+        Long eventId = seatMap.getEventId();
+        if (eventId == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found for seat map");
+        }
+
+        var event = seatMap.getEvent() != null
+                ? seatMap.getEvent()
+                : eventRepository.findById(eventId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
+
+        return event;
     }
 
     /**

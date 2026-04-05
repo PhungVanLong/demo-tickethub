@@ -74,6 +74,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/stats/organizer/**").hasAnyRole("ORGANIZER", "ADMIN")
                 // Customer/Organizer/Admin can submit event idea
                 .requestMatchers(HttpMethod.POST, "/api/events").hasAnyRole("CUSTOMER", "ORGANIZER", "ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/events/*/staff").hasRole("ORGANIZER")
                 .requestMatchers(HttpMethod.PUT, "/api/events/**").hasAnyRole("ORGANIZER", "ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/events/**").hasAnyRole("ORGANIZER", "ADMIN")
                 .requestMatchers("/api/events/*/seat-maps/**").hasAnyRole("ORGANIZER", "ADMIN")
