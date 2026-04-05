@@ -1,13 +1,14 @@
 package demo.ticket_app.service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import demo.ticket_app.dto.checkout.CheckoutItemRequest;
 import demo.ticket_app.dto.checkout.CheckoutQuoteRequest;
@@ -15,20 +16,17 @@ import demo.ticket_app.dto.checkout.CheckoutQuoteResponse;
 import demo.ticket_app.dto.checkout.CheckoutTierResponse;
 import demo.ticket_app.dto.checkout.CreateCheckoutOrderRequest;
 import demo.ticket_app.dto.checkout.CreateCheckoutOrderResponse;
-import demo.ticket_app.entity.DiscountType;
 import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.EventStatus;
 import demo.ticket_app.entity.Order;
 import demo.ticket_app.entity.OrderItem;
 import demo.ticket_app.entity.OrderStatus;
 import demo.ticket_app.entity.TicketTier;
-import demo.ticket_app.entity.Voucher;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.EventRepository;
 import demo.ticket_app.repository.OrderItemRepository;
 import demo.ticket_app.repository.OrderRepository;
 import demo.ticket_app.repository.TicketTierRepository;
-import demo.ticket_app.repository.VoucherRepository;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -39,7 +37,7 @@ public class CheckoutService {
 
     private final EventRepository eventRepository;
     private final TicketTierRepository ticketTierRepository;
-    private final VoucherRepository voucherRepository;
+    private final VoucherService voucherService;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
 
@@ -61,6 +59,7 @@ public class CheckoutService {
     public CheckoutQuoteResponse quote(CheckoutQuoteRequest request) {
         Event event = validateEventIsPublished(request.eventId());
         PricingResult pricingResult = calculatePricing(
+            request.userId(),
                 request.eventId(),
                 request.items(),
                 request.voucherCode()
@@ -80,6 +79,7 @@ public class CheckoutService {
         public CreateCheckoutOrderResponse createOrder(CreateCheckoutOrderRequest request, java.util.UUID currentUserId) {
         validateEventIsPublished(request.eventId());
         PricingResult pricingResult = calculatePricing(
+                currentUserId,
                 request.eventId(),
                 request.items(),
                 request.voucherCode()
@@ -124,7 +124,7 @@ public class CheckoutService {
         return event;
     }
 
-    private PricingResult calculatePricing(Long eventId, List<CheckoutItemRequest> itemRequests, String voucherCode) {
+    private PricingResult calculatePricing(UUID userId, Long eventId, List<CheckoutItemRequest> itemRequests, String voucherCode) {
         List<PricingItem> pricingItems = new ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
 
@@ -142,38 +142,22 @@ public class CheckoutService {
             pricingItems.add(new PricingItem(tier, itemRequest.quantity(), lineTotal));
         }
 
-        BigDecimal discount = calculateDiscount(subtotal, voucherCode);
-        BigDecimal serviceFee = subtotal.multiply(SERVICE_FEE_RATE).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal discount = calculateDiscount(subtotal, voucherCode, eventId, userId);
+        BigDecimal serviceFee = subtotal.multiply(SERVICE_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = subtotal.add(serviceFee).subtract(discount).max(BigDecimal.ZERO);
         return new PricingResult(pricingItems, subtotal, serviceFee, discount, total);
     }
 
-    private BigDecimal calculateDiscount(BigDecimal subtotal, String voucherCode) {
+    private BigDecimal calculateDiscount(BigDecimal subtotal, String voucherCode, Long eventId, UUID userId) {
         if (voucherCode == null || voucherCode.isBlank()) {
             return BigDecimal.ZERO;
         }
 
-        Optional<Voucher> voucherOptional = voucherRepository.findActiveVoucherByCode(
-                voucherCode,
-                LocalDateTime.now()
-        );
-
-        if (voucherOptional.isEmpty()) {
-            throw new IllegalArgumentException("Voucher is invalid or expired");
+        var validation = voucherService.validateVoucher(voucherCode, eventId, subtotal, userId);
+        if (!validation.valid()) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, validation.message());
         }
-
-        Voucher voucher = voucherOptional.get();
-        if (voucher.getMinOrderValue() != null && subtotal.compareTo(voucher.getMinOrderValue()) < 0) {
-            throw new IllegalArgumentException("Order does not meet voucher minimum value");
-        }
-
-        if (voucher.getDiscountType() == DiscountType.PERCENTAGE) {
-            return subtotal
-                    .multiply(voucher.getDiscountValue())
-                    .divide(BigDecimal.valueOf(100));
-        }
-
-        return voucher.getDiscountValue().min(subtotal);
+        return validation.calculatedDiscount();
     }
 
     private List<OrderItem> buildOrderItems(java.util.UUID orderId, List<PricingItem> items) {

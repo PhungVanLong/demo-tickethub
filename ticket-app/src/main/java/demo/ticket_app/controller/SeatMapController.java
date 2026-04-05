@@ -57,9 +57,10 @@ public class SeatMapController {
     public ResponseEntity<SeatMap> updateImage(
             @PathVariable Long eventId,
             @PathVariable Long seatMapId,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "imageUrl", required = false) String imageUrl) {
         UUID organizerId = securityUtils.getCurrentUserId();
-        return ResponseEntity.ok(seatMapService.updateImage(eventId, seatMapId, file, organizerId));
+        return ResponseEntity.ok(seatMapService.updateImage(eventId, seatMapId, file, imageUrl, organizerId));
     }
 
     @DeleteMapping("/{seatMapId}")

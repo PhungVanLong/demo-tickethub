@@ -45,7 +45,14 @@ public class CheckoutController {
 
     @PostMapping("/quote")
     public ResponseEntity<CheckoutQuoteResponse> quote(@Valid @RequestBody CheckoutQuoteRequest request) {
-        return ResponseEntity.ok(checkoutService.quote(request));
+        UUID currentUserId = securityUtils.getCurrentUserId();
+        CheckoutQuoteRequest sanitizedRequest = new CheckoutQuoteRequest(
+                currentUserId,
+                request.eventId(),
+                request.items(),
+                request.voucherCode()
+        );
+        return ResponseEntity.ok(checkoutService.quote(sanitizedRequest));
     }
 
     @PostMapping("/orders")

@@ -103,6 +103,33 @@ Organizer owner or Admin:
 - `GET /api/stats/organizer/{organizerId}`
 - Organizer event management endpoints
 
+### 3.1 FE Security Matrix (quick use)
+
+Legend:
+
+- `Y` = allowed by role
+- `Y*` = allowed by role + ownership/business checks in service
+- `-` = not allowed
+
+| Endpoint | CUSTOMER | ORGANIZER | STAFF | ADMIN | Notes |
+|---|---|---|---|---|---|
+| `POST /api/events` | Y | Y | - | Y | Create event idea |
+| `POST /api/events/{eventId}/staff` | - | Y* | - | - | Event must be `PUBLISHED`, organizer must own event |
+| `POST /api/events/{eventId}/seat-maps` | Y* | Y* | - | Y* | Must own event (or admin) |
+| `POST /api/events/{eventId}/seat-maps/{seatMapId}/tiers` | Y* | Y* | - | Y* | Must own event (or admin), seat map must belong to event |
+| `GET /api/events` | - | - | - | Y | Admin list all events with pricing/capacity metrics |
+| `GET /api/events/pending` | - | - | - | Y | Admin list pending events with pricing/capacity metrics |
+| `POST /api/vouchers/events/{eventId}` | - | Y* | - | Y | Organizer must own event; event must be `PUBLISHED` |
+| `POST /api/admin/vouchers/platform` | - | - | - | Y | Create global platform voucher (`applyOn = ALL`) |
+| `POST /api/vouchers/validate` | Y | Y | Y | Y | Auth required |
+| `POST /api/tickets/{ticketId}/use` | - | - | Y* | Y | Staff can only scan tickets of linked organizer |
+
+FE implementation notes:
+
+- Hide action buttons if role is not eligible by table above.
+- Even when button is shown (`Y*`), backend can still return `403`/`400` due to ownership or state checks.
+- Keep a standard error toast mapping: `401` (login again), `403` (no permission), `400` (invalid state/input), `404` (resource not found).
+
 ## 4. Event Contracts
 
 ### 4.1 Published list
@@ -151,7 +178,49 @@ Response content item:
 
 `GET /api/events/{id}`
 
-Returns all fields from list item plus long `description`.
+Access behavior:
+
+- Public users can only view events with status `PUBLISHED`.
+- Event owner can view their own event detail even when status is not `PUBLISHED`.
+
+Response shape (actual DTO):
+
+```json
+{
+  "id": 1,
+  "title": "Coldplay Concert 2026",
+  "slug": "coldplay-concert-2026-1775123456789",
+  "category": "Concert",
+  "description": "Long event description...",
+  "startTime": "2026-06-15T19:30:00Z",
+  "endTime": "2026-06-15T22:00:00Z",
+  "venue": "My Dinh National Stadium",
+  "city": "Hanoi",
+  "country": "Vietnam",
+  "imageUrl": "https://.../thumb.jpg",
+  "bannerUrl": "https://.../banner.jpg",
+  "minPrice": 1200000,
+  "originalPrice": 1500000,
+  "status": "PUBLISHED",
+  "featured": true,
+  "tags": ["Pop", "Live"],
+  "rating": 4.9,
+  "reviewCount": 2430,
+  "soldCount": 42500,
+  "totalCapacity": 50000,
+  "organizer": {
+    "id": "uuid",
+    "name": "Live Nation Vietnam",
+    "verified": true
+  }
+}
+```
+
+FE notes:
+
+- `minPrice`, `originalPrice`, `soldCount`, `totalCapacity` are aggregated from ticket tiers of the event.
+- `tags` is always returned as array (empty array if no tags).
+- If `bannerUrl` is null in DB, backend may fallback to image value in list/detail mapping.
 
 ### 4.3 Categories
 
@@ -162,6 +231,21 @@ Returns all fields from list item plus long `description`.
   "categories": ["Concert", "Festival", "Conference", "Comedy", "Sports", "Expo"]
 }
 ```
+
+### 4.4 Admin event list (with pricing/capacity)
+
+`GET /api/events` (admin only)
+
+`GET /api/events/pending` (admin only)
+
+Response item shape is aligned with `EventListItemResponse` and includes:
+
+- `minPrice`
+- `originalPrice`
+- `soldCount`
+- `totalCapacity`
+
+This lets admin dashboard/event moderation screens display price and quantity metrics directly without extra per-event calls.
 
 ## 5. Seat Map and Ticket Options
 
@@ -189,22 +273,32 @@ Returns all fields from list item plus long `description`.
 ```json
 [
   {
-    "id": 1001,
     "ticketTierId": 1001,
     "name": "VIP",
-    "tierType": "VIP",
     "price": 4500000,
-    "quantityAvailable": 120,
-    "maxPerOrder": 4,
-    "colorCode": "#8b5cf6"
+    "quantityAvailable": 120
   }
 ]
 ```
 
 Note:
 
-- Frontend should accept both `id` and `ticketTierId` (same value).
-- `maxPerOrder` defaults to `4` if event/tier specific rule is not configured yet.
+- Current DTO returns only: `ticketTierId`, `name`, `price`, `quantityAvailable`.
+- `tierType`, `colorCode`, `maxPerOrder`, and duplicated `id` are not included in this endpoint response.
+
+### 5.3 Data linkage for FE (important)
+
+Backend does not store `event_id` directly in `ticket_tiers`.
+
+Relationship used by backend queries:
+
+- `events.id` -> `seat_maps.event_id`
+- `seat_maps.id` -> `ticket_tiers.seat_map_id`
+
+So when FE needs event pricing/capacity data:
+
+- Event detail (`GET /api/events/{id}`) already returns aggregated pricing/capacity (`minPrice`, `originalPrice`, `soldCount`, `totalCapacity`).
+- Tier list (`GET /api/checkout/events/{eventId}/tiers`) is resolved through seat map relation internally.
 
 ## 6. Checkout Contracts
 
@@ -216,6 +310,7 @@ Request:
 
 ```json
 {
+  "userId": "uuid",
   "eventId": 1,
   "items": [
     { "ticketTierId": 1001, "quantity": 2 }
@@ -223,6 +318,12 @@ Request:
   "voucherCode": "SPRING10"
 }
 ```
+
+Quote behavior:
+
+- Backend reads user from JWT and overrides `userId` internally.
+- Due current DTO contract, `userId` is still required in request body format.
+- Voucher validation uses the same rule set as order creation (`/api/vouchers/validate` equivalent checks).
 
 Response:
 
@@ -236,6 +337,10 @@ Response:
   "expiresAt": "2026-04-02T11:00:00Z"
 }
 ```
+
+Note:
+
+- `expiresAt` in quote response is currently event end time from backend (`event.endTime`), not a separate quote hold expiration.
 
 ### 6.2 Create order
 
@@ -252,15 +357,21 @@ Request (no `userId`, backend reads from JWT):
 }
 ```
 
+Order creation behavior:
+
+- Checkout currently works by ticket tier + quantity.
+- Backend checks `quantityAvailable` of each selected tier and decreases stock after order creation.
+- No seat lock/hold API is applied during quote/order.
+
 Response:
 
 ```json
 {
-  "id": "a3d1...",
-  "orderCode": "TH-20260402-001",
+  "id": "uuid",
+  "orderCode": "ORD1775123456789",
   "status": "PENDING",
-  "totalAmount": 2520000,
-  "createdAt": "2026-04-02T10:30:00Z"
+  "totalAmount": 2420000,
+  "createdAt": "2026-04-02T10:30:00"
 }
 ```
 
@@ -293,6 +404,104 @@ Response:
   "expiresAt": "2026-04-05T23:59:59"
 }
 ```
+
+### 6.4 Seat selection + payment status (important)
+
+Seat selection APIs are now available (temporary hold flow):
+
+- `GET /api/events/{eventId}/seat-maps/{seatMapId}/seats`
+- `POST /api/events/{eventId}/seat-maps/{seatMapId}/seats/hold`
+- `POST /api/events/{eventId}/seat-maps/{seatMapId}/seats/release`
+- `POST /api/events/{eventId}/seat-maps/{seatMapId}/seats/confirm`
+
+Hold request:
+
+```json
+{
+  "seatIds": [101, 102, 103]
+}
+```
+
+Hold response:
+
+```json
+{
+  "holdToken": "uuid",
+  "expiresAt": "2026-04-06T12:00:00",
+  "seats": [
+    {
+      "seatId": 101,
+      "seatCode": "A-01",
+      "rowLabel": "A",
+      "colNumber": 1,
+      "ticketTierId": 1001,
+      "status": "HELD",
+      "holdExpiresAt": "2026-04-06T12:00:00"
+    }
+  ]
+}
+```
+
+Release request:
+
+```json
+{
+  "holdToken": "uuid"
+}
+```
+
+Confirm request:
+
+```json
+{
+  "holdToken": "uuid",
+  "orderId": "uuid"
+}
+```
+
+Important behavior:
+
+- Hold TTL is 10 minutes.
+- Expired holds are auto-released by scheduler.
+- Seats move through statuses: `AVAILABLE -> HELD -> BOOKED`.
+- Checkout (`/api/checkout/quote`, `/api/checkout/orders`) is still tier + quantity based.
+- For now, FE should treat hold/confirm flow as seat-lock workflow and checkout as pricing/order workflow.
+
+### 6.5 Voucher contracts (Organizer + Admin)
+
+Validate voucher before checkout:
+
+- `POST /api/vouchers/validate` (auth required)
+- Request:
+
+```json
+{
+  "code": "SPRING10",
+  "eventId": 1,
+  "orderAmount": 2400000
+}
+```
+
+- Response includes `valid`, `message`, `calculatedDiscount`, `voucherType`, `applyOn`, `eventId`.
+
+Create event voucher (Organizer or Admin for a specific event):
+
+- `POST /api/vouchers/events/{eventId}`
+- Access: `ORGANIZER` or `ADMIN`
+- Voucher behavior: `voucherType = ORGANIZER_EVENT`, `applyOn = SPECIFIC_EVENT`.
+- Scope: only applies to the given `{eventId}`.
+
+Create platform-wide voucher (Admin):
+
+- `POST /api/admin/vouchers/platform`
+- Access: `ADMIN` only
+- Voucher behavior: `voucherType = PLATFORM`, `applyOn = ALL`, `assignedToUser = null`.
+- Scope: can be used on all events (subject to validity window, usage limit, min order value).
+
+Checkout behavior (important):
+
+- `POST /api/checkout/quote` and `POST /api/checkout/orders` now use the same voucher validation rules as `POST /api/vouchers/validate`.
+- If voucher is invalid for user/event/order context, backend returns `400` with validation message.
 
 ## 7. Orders (Frontend Note - Fully Updated)
 

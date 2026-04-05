@@ -45,8 +45,8 @@ public class EventController {
     private final SecurityUtils securityUtils;
 
     @GetMapping
-    public ResponseEntity<List<Event>> getAllEvents() {
-        List<Event> events = eventService.getAllEvents();
+    public ResponseEntity<List<EventListItemResponse>> getAllEvents() {
+        List<EventListItemResponse> events = eventService.getAllEvents();
         return ResponseEntity.ok(events);
     }
 
@@ -62,8 +62,8 @@ public class EventController {
     }
 
     @GetMapping("/pending")
-    public ResponseEntity<List<Event>> getPendingEvents() {
-        List<Event> events = eventService.getPendingEvents();
+    public ResponseEntity<List<EventListItemResponse>> getPendingEvents() {
+        List<EventListItemResponse> events = eventService.getPendingEvents();
         return ResponseEntity.ok(events);
     }
 

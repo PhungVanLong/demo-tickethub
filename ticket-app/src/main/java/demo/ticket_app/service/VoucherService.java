@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import demo.ticket_app.dto.admin.CreatePlatformVoucherRequest;
 import demo.ticket_app.dto.voucher.CreateOrganizerVoucherRequest;
 import demo.ticket_app.dto.voucher.CreateVoucherResponse;
 import demo.ticket_app.dto.voucher.ValidateVoucherResponse;
@@ -24,8 +25,6 @@ import demo.ticket_app.entity.VoucherApplyOn;
 import demo.ticket_app.entity.VoucherType;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.EventRepository;
-import demo.ticket_app.repository.MonthlyVoucherAllocationRepository;
-import demo.ticket_app.repository.TicketTierRepository;
 import demo.ticket_app.repository.UserRepository;
 import demo.ticket_app.repository.VoucherRepository;
 import lombok.RequiredArgsConstructor;
@@ -37,11 +36,11 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional
 public class VoucherService {
 
+    private static final UUID SYSTEM_CREATOR_ID = new UUID(0L, 0L);
+
     private final VoucherRepository voucherRepository;
     private final EventRepository eventRepository;
     private final UserRepository userRepository;
-    private final MonthlyVoucherAllocationRepository monthlyAllocationRepository;
-    private final TicketTierRepository ticketTierRepository;
 
     /**
      * Create a voucher for a specific event (organizer only)
@@ -74,7 +73,7 @@ public class VoucherService {
                 .validUntil(request.validUntil())
                 .applyOn(VoucherApplyOn.SPECIFIC_EVENT)
                 .eventId(eventId)
-                .organizerId(organizerId)
+                .organizerId(event.getOrganizerId())
                 .createdBy(organizerId)
                 .isActive(true)
                 .build();
@@ -82,6 +81,34 @@ public class VoucherService {
         Voucher saved = voucherRepository.save(voucher);
         log.info("Organizer {} created event voucher {} for event {}", organizerId, saved.getCode(), eventId);
         
+        return new CreateVoucherResponse(saved.getId(), saved.getCode(), saved.getValidFrom(), saved.getValidUntil());
+    }
+
+    public CreateVoucherResponse createPlatformVoucher(CreatePlatformVoucherRequest request, UUID adminId) {
+        UserRole role = userRepository.findById(adminId)
+                .map(user -> user.getRole())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (role != UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admin can create platform vouchers");
+        }
+
+        Voucher voucher = Voucher.builder()
+                .code(generateVoucherCode())
+                .voucherType(VoucherType.PLATFORM)
+                .discountType(request.discountType())
+                .discountValue(request.discountValue())
+                .minOrderValue(request.minOrderValue())
+                .usageLimit(request.usageLimit())
+                .usedCount(0)
+                .validFrom(request.validFrom())
+                .validUntil(request.validUntil())
+                .applyOn(VoucherApplyOn.ALL)
+                .createdBy(adminId)
+                .isActive(true)
+                .build();
+
+        Voucher saved = voucherRepository.save(voucher);
+        log.info("Admin {} created platform voucher {}", adminId, saved.getCode());
         return new CreateVoucherResponse(saved.getId(), saved.getCode(), saved.getValidFrom(), saved.getValidUntil());
     }
 
@@ -100,7 +127,7 @@ public class VoucherService {
                 .validUntil(validUntil)
                 .applyOn(VoucherApplyOn.ALL)
                 .assignedToUser(userId)
-                .createdBy(userId)  // System created
+                .createdBy(SYSTEM_CREATOR_ID)
                 .isActive(true)
                 .build();
         

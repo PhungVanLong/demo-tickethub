@@ -48,8 +48,11 @@ public class EventService {
     private final EventApprovalRepository eventApprovalRepository;
     private final UserRepository userRepository;
 
-    public List<Event> getAllEvents() {
-        return eventRepository.findAll();
+    @Transactional(readOnly = true)
+    public List<EventListItemResponse> getAllEvents() {
+        return eventRepository.findAll().stream()
+                .map(this::toEventListItem)
+                .toList();
     }
 
     public List<Event> getPublishedEvents() {
@@ -92,8 +95,11 @@ public class EventService {
         return PageResponse.from(events);
     }
 
-    public List<Event> getPendingEvents() {
-        return eventRepository.findByStatus(EventStatus.PENDING);
+    @Transactional(readOnly = true)
+    public List<EventListItemResponse> getPendingEvents() {
+        return eventRepository.findByStatus(EventStatus.PENDING).stream()
+                .map(this::toEventListItem)
+                .toList();
     }
 
     public List<Event> getEventsByOrganizer(UUID organizerId) {
