@@ -33,7 +33,7 @@
           <!-- Stats -->
           <div class="flex gap-6 sm:gap-8">
             <div class="text-center">
-              <p class="text-2xl font-black text-white">{{ orders.length }}</p>
+              <p class="text-2xl font-black text-white">{{ displayOrders.length }}</p>
               <p class="text-xs text-zinc-500">Orders</p>
             </div>
             <div class="text-center">
@@ -68,7 +68,11 @@
 
       <!-- Tab: My Tickets -->
       <div v-if="activeTab === 'tickets'" class="space-y-4 animate-fade-in">
-        <div v-if="orders.length === 0" class="text-center py-20">
+        <div v-if="booking.error" class="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+          {{ booking.error }}
+        </div>
+
+        <div v-if="displayOrders.length === 0" class="text-center py-20">
           <svg class="w-16 h-16 mx-auto text-zinc-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path d="M20 12v10H4V12M22 7H2v5h20V7zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
           </svg>
@@ -77,17 +81,23 @@
         </div>
 
         <div
-          v-for="order in orders"
+          v-for="order in displayOrders"
           :key="order.id"
           class="card p-5 sm:p-6 hover:border-zinc-700 transition-all duration-200"
         >
           <div class="flex flex-col sm:flex-row gap-5">
             <!-- Event image -->
-            <img
-              :src="order.image"
-              :alt="order.eventTitle"
-              class="w-full sm:w-36 h-32 sm:h-auto rounded-xl object-cover shrink-0"
-            />
+            <div class="relative w-full sm:w-36 shrink-0">
+              <img
+                :src="order.image || fallbackEventImage"
+                :alt="order.eventTitle"
+                class="w-full sm:w-36 h-32 sm:h-full rounded-xl object-cover"
+              />
+              <div class="absolute top-2 left-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide border"
+                   :class="tierBannerClass(getOrderPrimaryTierType(order))">
+                {{ getOrderTierLabel(order) }}
+              </div>
+            </div>
 
             <!-- Details -->
             <div class="flex-1 min-w-0">
@@ -99,11 +109,11 @@
               <div class="space-y-1.5 mb-3">
                 <div class="flex items-center gap-2 text-sm text-zinc-400">
                   <svg class="w-3.5 h-3.5 text-zinc-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  {{ formatDate(order.eventDate) }} · {{ order.eventTime }}
+                  {{ formatDate(order.eventDate) }}<span v-if="order.eventTime"> · {{ order.eventTime }}</span>
                 </div>
                 <div class="flex items-center gap-2 text-sm text-zinc-400">
                   <svg class="w-3.5 h-3.5 text-zinc-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.657 16.657 13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
-                  {{ order.venue }}
+                  {{ order.venue || 'Venue updating' }}
                 </div>
               </div>
 
@@ -123,24 +133,23 @@
                   <p class="text-xs text-zinc-500">Total Paid</p>
                   <p class="text-base font-bold text-white">{{ formatPrice(order.total) }}</p>
                 </div>
-                <div class="flex gap-2">
-                  <button
-                    v-if="order.status === 'confirmed'"
-                    class="btn-secondary py-2 px-4 text-sm"
-                    @click="viewTicket(order)"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    View Tickets
-                  </button>
-                  <RouterLink :to="`/order/${order.orderId || order.id}`" class="btn-ghost py-2 px-3 text-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Details
-                  </RouterLink>
+                <div class="flex flex-col items-end gap-2">
+                  <p class="text-xs text-zinc-500">Purchased: {{ formatDateTime(order.bookedAt) || '—' }}</p>
+                  <div class="flex gap-2">
+                    <button
+                      v-if="(order.preloadedTickets?.length || order.tickets?.length)"
+                      class="btn-secondary py-2 px-4 text-sm"
+                      @click="viewTicket(order)"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      View Tickets
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <p class="text-xs text-zinc-600 mt-2">
-                Order #{{ order.orderCode || order.displayId || order.id }} · Paid via {{ order.paymentMethod }} · {{ formatDateTime(order.bookedAt) }}
+                Order #{{ order.orderCode || order.displayId || order.id }} · Paid via {{ order.paymentMethod }}
               </p>
             </div>
           </div>
@@ -220,8 +229,22 @@
         class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
         @click.self="closeTicketModal"
       >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-3xl max-w-4xl w-full p-6 shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
+        <div class="relative bg-zinc-900 border border-zinc-700 rounded-3xl max-w-4xl w-full p-6 shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
+          <button
+            type="button"
+            class="absolute top-4 right-4 w-9 h-9 rounded-full border border-zinc-700 bg-zinc-900/80 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors flex items-center justify-center"
+            aria-label="Close ticket modal"
+            @click="closeTicketModal"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+
           <div class="text-center mb-6">
+            <img
+              :src="modalEventBanner"
+              :alt="selectedOrder.eventTitle"
+              class="w-full h-36 sm:h-44 object-cover rounded-2xl mb-4 border border-zinc-800"
+            />
             <h3 class="font-black text-white text-xl">Your E-Tickets</h3>
             <p class="text-zinc-500 text-sm mt-1">{{ selectedOrder.eventTitle }}</p>
             <p class="text-zinc-600 text-xs mt-1">Order #{{ selectedOrder.orderCode || selectedOrder.displayId || selectedOrder.id }}</p>
@@ -236,7 +259,7 @@
             {{ ticketModalError }}
           </div>
 
-          <div v-else-if="selectedTickets.length" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <div v-else-if="selectedTickets.length" :class="ticketModalGridClass">
             <div v-for="ticket in selectedTickets" :key="ticket.id" class="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 space-y-4">
               <TicketQrCode :data="ticket.qrCodeData" :size="220" />
 
@@ -251,33 +274,45 @@
                 </div>
                 <div class="flex justify-between gap-3">
                   <span class="text-zinc-500">Date</span>
-                  <span class="text-white text-right">{{ formatDate(selectedOrder.eventDate) }}</span>
+                  <span class="text-white text-right">{{ formatDate(ticket.eventDate || selectedOrder.eventDate) }}</span>
                 </div>
                 <div class="flex justify-between gap-3">
                   <span class="text-zinc-500">Venue</span>
-                  <span class="text-white text-right max-w-[60%]">{{ selectedOrder.venue }}</span>
+                  <span class="text-white text-right max-w-[60%]">{{ ticket.venue || selectedOrder.venue }}</span>
                 </div>
                 <div v-if="ticket.seatLabel" class="flex justify-between gap-3">
                   <span class="text-zinc-500">Seat</span>
                   <span class="text-white text-right">{{ ticket.seatLabel }}</span>
                 </div>
+                <div v-if="ticket.holderName" class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Buyer</span>
+                  <span class="text-white text-right max-w-[60%]">{{ ticket.holderName }}</span>
+                </div>
+                <div v-if="ticket.holderEmail" class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Buyer Email</span>
+                  <span class="text-white text-right max-w-[60%]">{{ ticket.holderEmail }}</span>
+                </div>
                 <div class="flex justify-between gap-3">
                   <span class="text-zinc-500">Status</span>
-                  <span class="text-white capitalize">{{ ticket.status }}</span>
+                  <span :class="ticketStatusBadge(ticket.status)">{{ ticketStatusLabel(ticket.status) }}</span>
+                </div>
+                <div v-if="ticket.usedAt" class="flex justify-between gap-3">
+                  <span class="text-zinc-500">Used At</span>
+                  <span class="text-white text-right">{{ formatDateTime(ticket.usedAt) }}</span>
                 </div>
               </div>
 
-              <button class="btn-primary w-full justify-center" @click="downloadTicket(ticket)">
-                Download QR
-              </button>
+              <div class="grid grid-cols-1 gap-2">
+                <button class="btn-primary w-full justify-center" @click="downloadTicket(ticket)">
+                  Download QR
+                </button>
+              </div>
             </div>
           </div>
 
           <div v-else class="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-8 text-center text-sm text-zinc-500 mb-6">
             No issued tickets were returned by the backend for this order yet.
           </div>
-
-          <button class="btn-primary w-full justify-center" @click="closeTicketModal">Close</button>
         </div>
       </div>
     </Transition>
@@ -296,9 +331,60 @@ const booking = useBookingStore()
 
 // Fetch real orders on mount (non-blocking; template stays reactive)
 onMounted(() => booking.fetchMyOrders())
+onMounted(() => booking.fetchMyTickets())
 
 // Alias so the template doesn't need changes
 const orders = computed(() => booking.myOrders)
+const myTickets = computed(() => booking.myTickets)
+const fallbackEventImage = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80'
+
+const displayOrders = computed(() => {
+  const toTime = (value) => {
+    const parsed = new Date(value || 0).getTime()
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  // Ticket-first rendering for My Tickets tab: each issued ticket is one card.
+  if (myTickets.value.length) {
+    const mapped = myTickets.value.map((ticket) => {
+      const derivedOrderCode = String(ticket.orderId || ticket.orderItemId || ticket.ticketCode || ticket.id)
+      const normalizedStatus = ticket.status === 'cancelled'
+        ? 'cancelled'
+        : (ticket.status === 'used' ? 'confirmed' : 'confirmed')
+
+      return {
+        orderId: ticket.orderId || ticket.id,
+        id: ticket.id,
+        orderCode: derivedOrderCode,
+        eventId: ticket.eventId || null,
+        eventTitle: ticket.eventTitle || ticket.tierName || 'Ticket',
+        eventDate: ticket.eventDate || null,
+        eventTime: ticket.eventTime || null,
+        venue: ticket.venue || '',
+        image: ticket.eventBannerUrl || '',
+        status: normalizedStatus,
+        paymentMethod: '-',
+        bookedAt: ticket.createdAt || null,
+        total: Number(ticket.price || 0),
+        tickets: [{ type: ticket.tierName || 'Ticket', qty: 1, price: Number(ticket.price || 0) }],
+        preloadedTickets: [ticket],
+      }
+    })
+
+    return mapped.sort((a, b) => toTime(b.bookedAt || b.eventDate) - toTime(a.bookedAt || a.eventDate))
+  }
+
+  return [...orders.value].sort((a, b) => toTime(b.bookedAt || b.eventDate) - toTime(a.bookedAt || a.eventDate))
+})
+
+const totalOwnedTickets = computed(() => {
+  if (myTickets.value.length) return myTickets.value.length
+
+  return displayOrders.value.reduce((sum, order) => {
+    const qty = (order.tickets || []).reduce((inner, ticket) => inner + Number(ticket.qty || 0), 0)
+    return sum + qty
+  }, 0)
+})
 
 const activeTab     = ref('tickets')
 const selectedOrder = ref(null)
@@ -306,17 +392,27 @@ const selectedTickets = ref([])
 const ticketModalLoading = ref(false)
 const ticketModalError = ref('')
 
+const ticketModalGridClass = computed(() => {
+  if (selectedTickets.value.length <= 1) return 'grid grid-cols-1 gap-4 mb-6 max-w-md mx-auto'
+  return 'grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6'
+})
+
+const modalEventBanner = computed(() => {
+  const firstTicketBanner = selectedTickets.value[0]?.eventBannerUrl
+  return firstTicketBanner || selectedOrder.value?.image || fallbackEventImage
+})
+
 const tabs = computed(() => [
-  { id: 'tickets',  label: 'My Tickets', count: orders.value.length },
+  { id: 'tickets',  label: 'My Tickets', count: totalOwnedTickets.value },
   { id: 'settings', label: 'Settings'                               },
 ])
 
 const upcomingCount = computed(() =>
-  orders.value.filter((o) => new Date(o.eventDate) >= new Date() && o.status === 'confirmed').length
+  displayOrders.value.filter((o) => new Date(o.eventDate) >= new Date() && o.status === 'confirmed').length
 )
 
 const totalSpent = computed(() => {
-  const sum = orders.value.reduce((s, o) => s + (o.status !== 'cancelled' ? (o.total ?? 0) : 0), 0)
+  const sum = displayOrders.value.reduce((s, o) => s + (o.status !== 'cancelled' ? (o.total ?? 0) : 0), 0)
   return new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(sum)
 })
 
@@ -334,6 +430,10 @@ async function viewTicket(order) {
   ticketModalLoading.value = true
 
   try {
+    if (Array.isArray(order.preloadedTickets) && order.preloadedTickets.length) {
+      selectedTickets.value = order.preloadedTickets
+      return
+    }
     selectedTickets.value = await booking.fetchOrderTickets(order.orderId ?? order.id, true)
   } catch {
     ticketModalError.value = booking.error || 'Failed to load issued tickets'
@@ -376,8 +476,45 @@ function statusLabel(status) {
   return { confirmed: 'Confirmed', pending: 'Pending', cancelled: 'Cancelled', refunded: 'Refunded' }[status] ?? status
 }
 
+function ticketStatusBadge(status) {
+  if (status === 'used') return 'bg-zinc-700 text-zinc-200 border border-zinc-600 rounded-lg px-2 py-0.5 text-xs font-semibold'
+  if (status === 'cancelled') return 'badge-red capitalize'
+  return 'badge-blue capitalize'
+}
+
+function ticketStatusLabel(status) {
+  return { active: 'Active', used: 'Used', cancelled: 'Cancelled' }[status] ?? status
+}
+
+function getOrderPrimaryTicket(order) {
+  if (Array.isArray(order?.preloadedTickets) && order.preloadedTickets.length) {
+    return order.preloadedTickets[0]
+  }
+  return null
+}
+
+function getOrderTierLabel(order) {
+  const ticket = getOrderPrimaryTicket(order)
+  if (ticket?.tierName) return ticket.tierName
+  if (ticket?.tierType) return ticket.tierType
+  if (Array.isArray(order?.tickets) && order.tickets.length) return order.tickets[0]?.type || 'Ticket'
+  return 'Ticket'
+}
+
+function getOrderPrimaryTierType(order) {
+  const ticket = getOrderPrimaryTicket(order)
+  return String(ticket?.tierType || ticket?.tierName || order?.tickets?.[0]?.type || '').toUpperCase()
+}
+
+function tierBannerClass(tierType) {
+  if (tierType === 'VVIP') return 'bg-rose-500/90 text-white border-rose-300/60'
+  if (tierType === 'VIP') return 'bg-amber-500/90 text-zinc-950 border-amber-200/70'
+  if (tierType === 'STANDING') return 'bg-emerald-500/85 text-white border-emerald-200/60'
+  return 'bg-blue-500/90 text-white border-blue-200/60'
+}
+
 function formatDate(d) {
-  if (!d) return ''
+  if (!d) return 'Date updating'
   return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 }
 function formatDateTime(d) {

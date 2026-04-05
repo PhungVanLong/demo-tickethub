@@ -6,6 +6,7 @@ import { ticketService } from '@/services/ticket.service'
 import { voucherService } from '@/services/voucher.service'
 import { logAction } from '@/services/actionLogger'
 import { extractApiError } from '@/utils/apiError'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 // ── Order normaliser ──────────────────────────────────────────────────────────
 function unwrapListResponse(data) {
@@ -17,9 +18,58 @@ function unwrapItemResponse(data) {
     return data?.data ?? data
 }
 
+const RECENT_ORDER_IDS_KEY = 'recent_order_ids'
+
+function getRecentOrderIds() {
+    try {
+        const raw = localStorage.getItem(RECENT_ORDER_IDS_KEY)
+        const parsed = raw ? JSON.parse(raw) : []
+        return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).filter(Boolean) : []
+    } catch {
+        return []
+    }
+}
+
+function persistRecentOrderId(orderId) {
+    const nextId = String(orderId || '').trim()
+    if (!nextId) return
+
+    const existing = getRecentOrderIds().filter((id) => id !== nextId)
+    const next = [nextId, ...existing].slice(0, 10)
+    localStorage.setItem(RECENT_ORDER_IDS_KEY, JSON.stringify(next))
+}
+
+function unwrapOrdersResponse(data) {
+    if (Array.isArray(data)) return data
+
+    const candidates = [
+        data?.content,
+        data?.data?.content,
+        data?.data,
+        data?.orders,
+        data?.data?.orders,
+        data?.results,
+        data?.result,
+    ]
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) return candidate
+    }
+
+    return []
+}
+
 function toKey(value) {
     if (value == null) return ''
     return String(value).trim()
+}
+
+function pickEventBanner(...candidates) {
+    for (const value of candidates) {
+        const normalized = resolveMediaUrl(value)
+        if (normalized) return normalized
+    }
+    return ''
 }
 
 export function normalizeTicket(ticket) {
@@ -28,26 +78,153 @@ export function normalizeTicket(ticket) {
     const ticketId = ticket?.ticketId ?? ticket?.id
     const tierName = tier?.name || ticket?.ticketTierName || ticket?.tierName || ticket?.type || 'Ticket'
 
+    const ticketCode = ticket?.ticketCode || (ticketId ? `TCK_${ticketId}` : '')
+    const rawQr = String(ticket?.qrCodeData || ticket?.qrCode || '').trim()
+    const fallbackQr = ticketCode
+        ? `TICKET|${ticketCode}|${String(ticketId || '')}`
+        : String(ticketId || '')
+
     return {
         id: ticketId,
         orderId: ticket?.orderId || ticket?.order?.id || ticket?.order?.orderId || null,
+        orderItemId: ticket?.orderItemId || null,
         eventId: event?.id || ticket?.eventId || null,
         eventTitle: event?.title || ticket?.eventTitle || '',
-        eventDate: event?.date || event?.eventDate || event?.startTime || ticket?.eventDate || ticket?.startTime || null,
-        eventTime: event?.time || event?.startTime || ticket?.eventTime || null,
-        venue: event?.venue || event?.venueName || ticket?.venue || '',
-        ticketCode: ticket?.ticketCode || (ticketId ? `TCK_${ticketId}` : ''),
-        qrCodeData: ticket?.qrCodeData || ticket?.qrCode || ticket?.ticketCode || String(ticketId || ''),
+        eventDate: event?.date || event?.eventDate || event?.startTime || ticket?.eventDate || ticket?.eventStartTime || ticket?.startTime || null,
+        eventTime: event?.time || event?.startTime || ticket?.eventTime || ticket?.eventStartTime || null,
+        venue: event?.venue || event?.venueName || ticket?.eventVenue || ticket?.venue || '',
+        city: event?.city || ticket?.eventCity || '',
+        eventBannerUrl: pickEventBanner(
+            event?.bannerUrl,
+            event?.imageUrl,
+            event?.image,
+            ticket?.eventBannerUrl,
+            ticket?.bannerUrl,
+            ticket?.imageUrl,
+            ticket?.image
+        ),
+        ticketCode,
+        qrCodeData: rawQr || fallbackQr,
         status: String(ticket?.status || ticket?.ticketStatus || 'active').toLowerCase(),
+        createdAt: ticket?.createdAt || null,
         usedAt: ticket?.usedAt || null,
-        holderName: ticket?.holderName || ticket?.purchaserName || ticket?.ownerName || '',
-        holderEmail: ticket?.holderEmail || ticket?.purchaserEmail || '',
+        holderName: ticket?.holderName || ticket?.purchaserName || ticket?.ownerName || ticket?.buyerFullName || '',
+        holderEmail: ticket?.holderEmail || ticket?.purchaserEmail || ticket?.buyerEmail || '',
+        holderPhone: ticket?.holderPhone || ticket?.purchaserPhone || ticket?.buyerPhone || '',
         seatLabel: ticket?.seatLabel || ticket?.seatNumber || ticket?.seatCode || '',
         sectionName: ticket?.sectionName || tier?.sectionName || '',
         type: tierName,
         tierName,
-        price: ticket?.price || ticket?.unitPrice || tier?.price || 0,
+        tierType: tier?.tierType || ticket?.tierType || '',
+        price: ticket?.price ?? ticket?.unitPrice ?? tier?.price ?? 0,
     }
+}
+
+function ensureUniqueTicketQrData(tickets) {
+    const seen = new Map()
+
+    return tickets.map((ticket) => {
+        const base = String(ticket?.qrCodeData || '').trim()
+        if (!base) return ticket
+
+        const nextCount = (seen.get(base) || 0) + 1
+        seen.set(base, nextCount)
+
+        if (nextCount === 1) return ticket
+
+        const suffix = ticket?.ticketCode || ticket?.id || nextCount
+        return {
+            ...ticket,
+            // Keep a deterministic unique variant only when duplicates are detected.
+            qrCodeData: `${base}|${suffix}`,
+        }
+    })
+}
+
+async function hydrateMissingTicketDetails(tickets) {
+    const needsHydration = tickets.filter((ticket) =>
+        ticket?.id && (!ticket.eventTitle || !ticket.venue || !Number(ticket.price || 0))
+    )
+
+    if (!needsHydration.length) return tickets
+
+    const settled = await Promise.allSettled(
+        needsHydration.map((ticket) => ticketService.getTicketById(ticket.id))
+    )
+
+    const hydratedById = new Map()
+    settled.forEach((result) => {
+        if (result.status !== 'fulfilled') return
+        const normalized = normalizeTicket(unwrapItemResponse(result.value))
+        const key = toKey(normalized?.id)
+        if (key) hydratedById.set(key, normalized)
+    })
+
+    return tickets.map((ticket) => {
+        const enriched = hydratedById.get(toKey(ticket?.id))
+        if (!enriched) return ticket
+        return {
+            ...ticket,
+            ...enriched,
+            // Keep potentially disambiguated QR from list response when present.
+            qrCodeData: ticket.qrCodeData || enriched.qrCodeData,
+        }
+    })
+}
+
+async function hydrateTicketsFromOrderContext(tickets) {
+    const targetOrderIds = Array.from(new Set(
+        tickets
+            .filter((ticket) => ticket?.orderId)
+            .filter((ticket) => !ticket.eventTitle || !ticket.venue || !Number(ticket.price || 0))
+            .map((ticket) => String(ticket.orderId))
+    ))
+
+    if (!targetOrderIds.length) return tickets
+
+    const settled = await Promise.allSettled(
+        targetOrderIds.map((orderId) => ticketService.getTicketsByOrder(orderId))
+    )
+
+    const byTicketId = new Map()
+    const byOrderId = new Map()
+
+    settled.forEach((result, index) => {
+        if (result.status !== 'fulfilled') return
+
+        const orderId = targetOrderIds[index]
+        const normalizedList = unwrapListResponse(result.value).map(normalizeTicket)
+        if (!normalizedList.length) return
+
+        byOrderId.set(orderId, normalizedList)
+        normalizedList.forEach((item) => {
+            const key = toKey(item?.id)
+            if (key) byTicketId.set(key, item)
+        })
+    })
+
+    return tickets.map((ticket) => {
+        const directMatch = byTicketId.get(toKey(ticket?.id))
+        const orderMatchList = byOrderId.get(toKey(ticket?.orderId)) || []
+        const contextTicket = directMatch || orderMatchList[0]
+
+        if (!contextTicket) return ticket
+
+        return {
+            ...ticket,
+            eventId: ticket.eventId || contextTicket.eventId,
+            eventTitle: ticket.eventTitle || contextTicket.eventTitle,
+            eventDate: ticket.eventDate || contextTicket.eventDate,
+            eventTime: ticket.eventTime || contextTicket.eventTime,
+            venue: ticket.venue || contextTicket.venue,
+            city: ticket.city || contextTicket.city,
+            eventBannerUrl: ticket.eventBannerUrl || contextTicket.eventBannerUrl,
+            holderName: ticket.holderName || contextTicket.holderName,
+            holderEmail: ticket.holderEmail || contextTicket.holderEmail,
+            holderPhone: ticket.holderPhone || contextTicket.holderPhone,
+            price: Number(ticket.price || 0) > 0 ? ticket.price : contextTicket.price,
+        }
+    })
 }
 
 export function normalizeOrder(o) {
@@ -65,13 +242,21 @@ export function normalizeOrder(o) {
         eventDate: ev.date || ev.eventDate || ev.startTime || o.eventDate || o.startTime,
         eventTime: ev.time || ev.startTime || o.eventTime,
         venue: ev.venue || ev.venueName || o.venue,
-        image: ev.image || ev.imageUrl || o.image || '',
+        image: pickEventBanner(
+            ev.bannerUrl,
+            ev.imageUrl,
+            ev.image,
+            o.eventBannerUrl,
+            o.bannerUrl,
+            o.imageUrl,
+            o.image
+        ),
         tickets: (o.items || o.orderItems || []).map((i) => ({
             type: i.ticketTier?.name || i.tierName || i.type || 'Ticket',
             qty: i.quantity || i.qty,
-            price: i.price || i.unitPrice || i.ticketTier?.price || 0,
+            price: i.price ?? i.unitPrice ?? i.ticketTier?.price ?? 0,
         })),
-        total: o.total || o.finalAmount || o.totalAmount || 0,
+        total: o.total ?? o.finalAmount ?? o.totalAmount ?? 0,
         status: String(o.status || o.orderStatus || 'pending').toLowerCase(),
         paymentMethod: o.paymentMethod || o.payment?.method || primaryPayment?.paymentMethod || '-',
         bookedAt: o.createdAt || o.bookedAt,
@@ -86,6 +271,7 @@ export const useBookingStore = defineStore('booking', () => {
     const order = ref(null)   // created order
     const paymentIntent = ref(null)
     const myOrders = ref([])
+    const myTickets = ref([])
     const ticketsByOrder = ref({})
     const ticketsById = ref({})
     const purchaserInfo = ref(null)  // { firstName, lastName, email, phone }
@@ -174,6 +360,16 @@ export const useBookingStore = defineStore('booking', () => {
     function cacheTicket(ticket) {
         if (!ticket?.id) return
 
+        const ticketKey = String(ticket.id)
+
+        // Keep myTickets reactive after actions like use/download.
+        const myTicketIndex = myTickets.value.findIndex((item) => String(item?.id) === ticketKey)
+        if (myTicketIndex !== -1) {
+            const nextMyTickets = [...myTickets.value]
+            nextMyTickets[myTicketIndex] = { ...nextMyTickets[myTicketIndex], ...ticket }
+            myTickets.value = nextMyTickets
+        }
+
         ticketsById.value = {
             ...ticketsById.value,
             [ticket.id]: ticket,
@@ -181,13 +377,36 @@ export const useBookingStore = defineStore('booking', () => {
 
         if (ticket.orderId) {
             const currentOrderTickets = ticketsByOrder.value[ticket.orderId] || []
-            const nextOrderTickets = currentOrderTickets.filter((item) => String(item.id) !== String(ticket.id))
+            const nextOrderTickets = currentOrderTickets.filter((item) => String(item.id) !== ticketKey)
             nextOrderTickets.push(ticket)
             ticketsByOrder.value = {
                 ...ticketsByOrder.value,
                 [ticket.orderId]: nextOrderTickets,
             }
         }
+    }
+
+    async function recoverOrdersFromRecentIds() {
+        const ids = getRecentOrderIds()
+        if (!ids.length) return []
+
+        const settled = await Promise.allSettled(
+            ids.map((id) => bookingService.getOrderById(id))
+        )
+
+        const recovered = settled
+            .filter((result) => result.status === 'fulfilled')
+            .map((result) => normalizeOrder(result.value))
+
+        const uniqueById = new Map()
+        recovered.forEach((orderItem) => {
+            const key = toKey(orderItem?.orderId || orderItem?.id || orderItem?.orderCode)
+            if (key && !uniqueById.has(key)) {
+                uniqueById.set(key, orderItem)
+            }
+        })
+
+        return Array.from(uniqueById.values())
     }
 
     async function fetchQuote() {
@@ -204,7 +423,6 @@ export const useBookingStore = defineStore('booking', () => {
                 return
             }
             const payload = {
-                userId: auth.user?.id,
                 eventId: event.value.id,
                 items: selections.value.map((s) => ({
                     ticketTierId: s.ticketType.id,
@@ -262,6 +480,18 @@ export const useBookingStore = defineStore('booking', () => {
             }
 
             order.value = await bookingService.createOrder(payload)
+            const createdOrderId = order.value?.orderId || order.value?.id
+            if (createdOrderId) {
+                persistRecentOrderId(createdOrderId)
+
+                const normalizedCreatedOrder = normalizeOrder(order.value)
+                const exists = myOrders.value.some((item) =>
+                    toKey(item?.orderId || item?.id || item?.orderCode) === toKey(createdOrderId)
+                )
+                if (!exists) {
+                    myOrders.value = [normalizedCreatedOrder, ...myOrders.value]
+                }
+            }
             logAction('BOOKING_ORDER_SUCCESS', { orderId: order.value?.orderId || order.value?.id })
             return order.value
         } catch (e) {
@@ -318,12 +548,45 @@ export const useBookingStore = defineStore('booking', () => {
 
     async function fetchMyOrders() {
         loading.value = true
+        error.value = null
         try {
             const data = await bookingService.getMyOrders()
-            const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? data)
-            myOrders.value = Array.isArray(raw) ? raw.map(normalizeOrder) : []
-        } catch {
+            const raw = unwrapOrdersResponse(data)
+            myOrders.value = raw.map(normalizeOrder)
+
+            if (!myOrders.value.length) {
+                const recovered = await recoverOrdersFromRecentIds()
+                if (recovered.length) {
+                    myOrders.value = recovered
+                }
+            }
+
+            logAction('BOOKING_FETCH_MY_ORDERS_SUCCESS', { count: myOrders.value.length })
+        } catch (e) {
+            error.value = extractApiError(e, 'Failed to load your orders').message
+            logAction('BOOKING_FETCH_MY_ORDERS_FAILED', { message: error.value })
             myOrders.value = []
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function fetchMyTickets() {
+        loading.value = true
+        error.value = null
+        try {
+            const data = await ticketService.getMyTickets()
+            const normalizedTickets = unwrapListResponse(data).map(normalizeTicket)
+            const hydratedByIdTickets = await hydrateMissingTicketDetails(normalizedTickets)
+            const hydratedByOrderTickets = await hydrateTicketsFromOrderContext(hydratedByIdTickets)
+            const tickets = ensureUniqueTicketQrData(hydratedByOrderTickets)
+            myTickets.value = tickets
+            tickets.forEach(cacheTicket)
+            logAction('BOOKING_FETCH_MY_TICKETS_SUCCESS', { count: myTickets.value.length })
+        } catch (e) {
+            error.value = extractApiError(e, 'Failed to load your tickets').message
+            myTickets.value = []
+            logAction('BOOKING_FETCH_MY_TICKETS_FAILED', { message: error.value })
         } finally {
             loading.value = false
         }
@@ -333,9 +596,17 @@ export const useBookingStore = defineStore('booking', () => {
         if (myOrders.value.length) return
         try {
             const data = await bookingService.getMyOrders()
-            const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? data)
-            myOrders.value = Array.isArray(raw) ? raw.map(normalizeOrder) : []
-        } catch {
+            const raw = unwrapOrdersResponse(data)
+            myOrders.value = raw.map(normalizeOrder)
+
+            if (!myOrders.value.length) {
+                const recovered = await recoverOrdersFromRecentIds()
+                if (recovered.length) {
+                    myOrders.value = recovered
+                }
+            }
+        } catch (e) {
+            error.value = extractApiError(e, 'Failed to load your orders').message
             myOrders.value = []
         }
     }
@@ -411,7 +682,9 @@ export const useBookingStore = defineStore('booking', () => {
             for (const candidate of candidates) {
                 try {
                     const data = await ticketService.getTicketsByOrder(candidate)
-                    const tickets = unwrapListResponse(data).map(normalizeTicket)
+                    const tickets = ensureUniqueTicketQrData(
+                        unwrapListResponse(data).map(normalizeTicket)
+                    )
 
                     if (tickets.length) {
                         tickets.forEach(cacheTicket)
@@ -551,12 +824,12 @@ export const useBookingStore = defineStore('booking', () => {
     }
 
     return {
-        event, selections, quote, order, paymentIntent, myOrders, ticketsByOrder, ticketsById, purchaserInfo,
+        event, selections, quote, order, paymentIntent, myOrders, myTickets, ticketsByOrder, ticketsById, purchaserInfo,
         appliedVoucher,
         loading, error,
         totalTickets, subtotal, discountAmount, subtotalAfterDiscount, serviceFee, grandTotal,
         setBooking, setPurchaserInfo, fetchQuote, createOrder, createPaymentIntent,
-        fakeWebhook, fetchMyOrders, fetchOrderById, fetchOrderTickets, fetchTicketById,
+        fakeWebhook, fetchMyOrders, fetchMyTickets, fetchOrderById, fetchOrderTickets, fetchTicketById,
         useTicket, downloadTicket, cancelOrder, applyVoucher, clear,
     }
 })

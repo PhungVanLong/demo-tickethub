@@ -38,6 +38,17 @@ function actionLogPlugin() {
 
 export default defineConfig({
     plugins: [vue(), actionLogPlugin()],
+    server: {
+        host: true,
+        allowedHosts: ['nonfecund-unvenerative-judi.ngrok-free.dev'],
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8081',
+                changeOrigin: true,
+                rewrite: (path) => path
+            }
+        }
+    },
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),

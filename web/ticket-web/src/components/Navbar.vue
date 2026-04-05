@@ -26,14 +26,6 @@
           >
             Dashboard
           </RouterLink>
-          <RouterLink
-            v-if="auth.isOrganizer && !auth.isAdmin"
-            to="/organizer"
-            class="btn-ghost text-sm"
-            active-class="!text-white !bg-zinc-800"
-          >
-            My Events
-          </RouterLink>
         </nav>
 
         <!-- Right side -->
@@ -50,15 +42,6 @@
             </svg>
             <span class="hidden lg:inline">Search</span>
           </button>
-
-          <RouterLink
-            v-if="auth.isLoggedIn"
-            to="/organizer/events/create"
-            class="btn-primary text-sm py-2 px-4"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            Create Event
-          </RouterLink>
 
           <!-- Logged in user -->
           <template v-if="auth.isLoggedIn">
