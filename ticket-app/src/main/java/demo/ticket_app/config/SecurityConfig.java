@@ -67,6 +67,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/users/*/demote-customer").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/users/*/activate").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/users/*/deactivate").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/users/staff").hasRole("ORGANIZER")
                 .requestMatchers("/api/users/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/stats/platform").hasRole("ADMIN")
@@ -82,6 +83,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/vouchers/events/**").hasAnyRole("ORGANIZER", "ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/vouchers/organizer").hasAnyRole("ORGANIZER", "ADMIN")
                 // Tickets
+                .requestMatchers(HttpMethod.POST, "/api/tickets/*/use").hasAnyRole("STAFF", "ADMIN")
                 .requestMatchers("/api/tickets/**").authenticated()
                 // Any authenticated user
                 .anyRequest().authenticated()

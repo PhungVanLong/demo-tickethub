@@ -1,17 +1,24 @@
 package demo.ticket_app.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import demo.ticket_app.dto.auth.CreateStaffAccountRequest;
+import demo.ticket_app.dto.auth.CreateStaffAccountResponse;
 import demo.ticket_app.entity.User;
 import demo.ticket_app.entity.UserRole;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -20,13 +27,15 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
 
     public User getUserById(UUID userId) {
-        return userRepository.findById(userId)
+        UUID safeUserId = Objects.requireNonNull(userId, "userId must not be null");
+        return userRepository.findById(safeUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
     }
 
@@ -93,7 +102,7 @@ public class UserService {
 
     public void deleteUser(UUID userId) {
         User user = getUserById(userId);
-        userRepository.delete(user);
+        userRepository.delete(Objects.requireNonNull(user, "user must not be null"));
         log.info("Deleted user with id: {}", userId);
     }
 
@@ -127,6 +136,38 @@ public class UserService {
         User updated = userRepository.save(user);
         log.info("Promoted user {} to ORGANIZER", userId);
         return updated;
+    }
+
+    public CreateStaffAccountResponse createStaffAccountByOrganizer(User organizer, CreateStaffAccountRequest request) {
+        if (organizer.getRole() != UserRole.ORGANIZER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only organizer can create staff accounts");
+        }
+
+        String normalizedEmail = request.email().trim().toLowerCase();
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already registered");
+        }
+
+        User staff = User.builder()
+                .email(normalizedEmail)
+                .passwordHash(passwordEncoder.encode(request.password()))
+                .fullName(request.fullName())
+                .phone(request.phone())
+                .role(UserRole.STAFF)
+                .isActive(true)
+                .isVerified(true)
+                .build();
+
+        User saved = userRepository.save(staff);
+        log.info("Organizer {} created staff account {}", organizer.getId(), saved.getId());
+
+        return new CreateStaffAccountResponse(
+                saved.getId(),
+                saved.getEmail(),
+                saved.getFullName(),
+                saved.getRole(),
+                Boolean.TRUE.equals(saved.getIsActive())
+        );
     }
 
     public User demoteToCustomer(UUID userId) {
