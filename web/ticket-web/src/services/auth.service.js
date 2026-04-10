@@ -13,6 +13,16 @@ export const authService = {
     },
 
     /**
+     * POST /api/auth/google
+     * Request body: { idToken }
+     * Response shape: same as /api/auth/login (AuthResponse)
+     */
+    async loginWithGoogle(idToken) {
+        const res = await api.post('/api/auth/google', { idToken })
+        return res.data
+    },
+
+    /**
      * POST /api/auth/register
      * Expected response: { token, user: {...}, refreshToken? }
      */

@@ -121,6 +121,12 @@ export const voucherService = {
     return res.data
   },
 
+  // Lấy danh sách voucher platform sale đang active (public)
+  async getActivePlatformSaleVouchers() {
+    const res = await api.get('/api/platform-sales/active-vouchers')
+    return res.data
+  },
+
   // Get organizer's event vouchers
   async getOrganizerVouchers() {
     const res = await api.get('/api/vouchers/organizer')
@@ -135,6 +141,27 @@ export const voucherService = {
     for (const candidate of candidates) {
       try {
         const res = await api.post(`/api/vouchers/events/${eventId}`, candidate)
+        return res.data
+      } catch (err) {
+        lastError = err
+        const status = err?.response?.status
+        if (status !== 400 && status !== 422) {
+          throw err
+        }
+      }
+    }
+
+    throw lastError
+  },
+
+  // Create platform-wide voucher (admin only)
+  async createPlatformVoucher(payload) {
+    const candidates = buildCreatePayloadCandidates(payload)
+    let lastError = null
+
+    for (const candidate of candidates) {
+      try {
+        const res = await api.post('/api/admin/vouchers/platform', candidate)
         return res.data
       } catch (err) {
         lastError = err
@@ -167,8 +194,13 @@ export const voucherService = {
   },
 
   // Validate voucher code
-  async validateVoucher(code) {
-    const res = await api.post('/api/vouchers/validate', { code })
+  async validateVoucher(code, context = {}) {
+    const payload = pruneEmptyFields({
+      code,
+      eventId: context?.eventId,
+      orderAmount: toOptionalNumber(context?.orderAmount),
+    })
+    const res = await api.post('/api/vouchers/validate', payload)
     return res.data
   }
 }

@@ -1,8 +1,11 @@
 package demo.ticket_app.dto.event;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -19,6 +22,8 @@ public record CreateEventRequest(
         @NotNull LocalDateTime endTime,
         @Size(max = 500) String bannerUrl,
         @Size(max = 500) String imageUrl,
+        @DecimalMin("0") BigDecimal defaultPrice,
+        @Min(1) Integer defaultTierQuantity,
         Boolean featured,
         List<String> tags
 ) {

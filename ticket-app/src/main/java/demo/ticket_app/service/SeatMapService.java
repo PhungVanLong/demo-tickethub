@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -29,6 +30,9 @@ import lombok.RequiredArgsConstructor;
 public class SeatMapService {
 
     private static final Path SEAT_MAP_UPLOAD_DIR = Paths.get("uploads", "seatmaps");
+    private static final List<String> ALLOWED_IMAGE_EXTENSIONS = Arrays.asList(
+            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"
+    );
 
     private final SeatMapRepository seatMapRepository;
     private final EventRepository eventRepository;
@@ -49,14 +53,7 @@ public class SeatMapService {
         if (!event.getOrganizerId().equals(organizerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the organizer of this event");
         }
-        if ((file == null || file.isEmpty()) && (imageUrl == null || imageUrl.isBlank())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Either an image file or an imageUrl must be provided");
-        }
-
-        String resolvedImageUrl = (file != null && !file.isEmpty())
-                ? storeImage(file)
-                : imageUrl.trim();
+        String resolvedImageUrl = resolveImageUrl(file, imageUrl);
 
         SeatMap seatMap = SeatMap.builder()
                 .eventId(eventId)
@@ -73,6 +70,10 @@ public class SeatMapService {
      * Replace the image of an existing seat map.
      */
     public SeatMap updateImage(Long eventId, Long seatMapId, MultipartFile file, UUID organizerId) {
+        return updateImage(eventId, seatMapId, file, null, organizerId);
+    }
+
+    public SeatMap updateImage(Long eventId, Long seatMapId, MultipartFile file, String imageUrl, UUID organizerId) {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
         if (!event.getOrganizerId().equals(organizerId)) {
@@ -81,7 +82,7 @@ public class SeatMapService {
         SeatMap seatMap = seatMapRepository.findById(seatMapId)
                 .orElseThrow(() -> new ResourceNotFoundException("Seat map not found with id: " + seatMapId));
 
-        seatMap.setImageUrl(storeImage(file));
+        seatMap.setImageUrl(resolveImageUrl(file, imageUrl));
         return seatMapRepository.save(seatMap);
     }
 
@@ -100,13 +101,20 @@ public class SeatMapService {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Image file is required");
         }
+
+        String originalName = Objects.requireNonNullElse(file.getOriginalFilename(), "");
         String contentType = file.getContentType();
-        if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
+        boolean imageContentType = contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("image/");
+        boolean imageExtension = hasAllowedImageExtension(originalName);
+        if (!imageContentType && !imageExtension) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only image files are allowed");
         }
+
         try {
             Files.createDirectories(SEAT_MAP_UPLOAD_DIR);
-            String originalName = Objects.requireNonNullElse(file.getOriginalFilename(), "seat-map");
+            if (originalName.isBlank()) {
+                originalName = "seat-map";
+            }
             String storedName = UUID.randomUUID() + extractExtension(originalName);
             Path destination = SEAT_MAP_UPLOAD_DIR.resolve(storedName);
             Files.copy(file.getInputStream(), destination, StandardCopyOption.REPLACE_EXISTING);
@@ -114,6 +122,38 @@ public class SeatMapService {
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Cannot store seat map image");
         }
+    }
+
+    private String resolveImageUrl(MultipartFile file, String imageUrl) {
+        boolean hasFile = file != null && !file.isEmpty();
+        boolean hasImageUrl = imageUrl != null && !imageUrl.isBlank();
+
+        if (!hasFile && !hasImageUrl) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Either an image file or an imageUrl must be provided");
+        }
+
+        if (hasFile) {
+            return storeImage(file);
+        }
+
+        String normalized = imageUrl.trim();
+        if (!isValidImageUrl(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "imageUrl must start with http://, https://, or /uploads/");
+        }
+        return normalized;
+    }
+
+    private boolean isValidImageUrl(String imageUrl) {
+        return imageUrl.startsWith("http://")
+                || imageUrl.startsWith("https://")
+                || imageUrl.startsWith("/uploads/");
+    }
+
+    private boolean hasAllowedImageExtension(String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        return ALLOWED_IMAGE_EXTENSIONS.stream().anyMatch(lower::endsWith);
     }
 
     private String extractExtension(String fileName) {

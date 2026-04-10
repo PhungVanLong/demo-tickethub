@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import demo.ticket_app.config.SecurityUtils;
+import demo.ticket_app.dto.auth.CreateStaffAccountRequest;
+import demo.ticket_app.dto.auth.CreateStaffAccountResponse;
 import demo.ticket_app.dto.common.PageResponse;
 import demo.ticket_app.dto.event.CreateEventRequest;
 import demo.ticket_app.dto.event.DecideEventRequest;
@@ -24,7 +26,9 @@ import demo.ticket_app.dto.event.EventDetailResponse;
 import demo.ticket_app.dto.event.EventListItemResponse;
 import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.EventStatus;
+import demo.ticket_app.entity.User;
 import demo.ticket_app.service.EventService;
+import demo.ticket_app.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,11 +41,12 @@ import lombok.extern.slf4j.Slf4j;
 public class EventController {
 
     private final EventService eventService;
+    private final UserService userService;
     private final SecurityUtils securityUtils;
 
     @GetMapping
-    public ResponseEntity<List<Event>> getAllEvents() {
-        List<Event> events = eventService.getAllEvents();
+    public ResponseEntity<List<EventListItemResponse>> getAllEvents() {
+        List<EventListItemResponse> events = eventService.getAllEvents();
         return ResponseEntity.ok(events);
     }
 
@@ -57,28 +62,28 @@ public class EventController {
     }
 
     @GetMapping("/pending")
-    public ResponseEntity<List<Event>> getPendingEvents() {
-        List<Event> events = eventService.getPendingEvents();
+    public ResponseEntity<List<EventListItemResponse>> getPendingEvents() {
+        List<EventListItemResponse> events = eventService.getPendingEvents();
         return ResponseEntity.ok(events);
     }
 
     @GetMapping("/organizer/{organizerId}")
-    public ResponseEntity<List<Event>> getEventsByOrganizer(@PathVariable UUID organizerId) {
-        List<Event> events = eventService.getEventsByOrganizer(organizerId);
+    public ResponseEntity<List<EventListItemResponse>> getEventsByOrganizer(@PathVariable UUID organizerId) {
+        List<EventListItemResponse> events = eventService.getEventListByOrganizer(organizerId);
         return ResponseEntity.ok(events);
     }
 
     @GetMapping("/city/{city}")
-    public ResponseEntity<List<Event>> getEventsByCity(@PathVariable String city) {
-        List<Event> events = eventService.getEventsByCity(city);
+    public ResponseEntity<List<EventListItemResponse>> getEventsByCity(@PathVariable String city) {
+        List<EventListItemResponse> events = eventService.getEventListByCity(city);
         return ResponseEntity.ok(events);
     }
 
     @GetMapping("/city/{city}/status/{status}")
-    public ResponseEntity<List<Event>> getEventsByCityAndStatus(
+    public ResponseEntity<List<EventListItemResponse>> getEventsByCityAndStatus(
             @PathVariable String city,
             @PathVariable EventStatus status) {
-        List<Event> events = eventService.getEventsByCityAndStatus(city, status);
+        List<EventListItemResponse> events = eventService.getEventListByCityAndStatus(city, status);
         return ResponseEntity.ok(events);
     }
 
@@ -139,9 +144,19 @@ public class EventController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{eventId}/staff")
+    public ResponseEntity<CreateStaffAccountResponse> createStaffForEvent(
+            @PathVariable Long eventId,
+            @Valid @RequestBody CreateStaffAccountRequest request) {
+        User organizer = securityUtils.getCurrentUser();
+        eventService.validateOrganizerCanManageStaffForEvent(eventId, organizer.getId());
+        CreateStaffAccountResponse created = userService.createStaffAccountByOrganizer(organizer, request);
+        return ResponseEntity.ok(created);
+    }
+
     @GetMapping("/search")
-    public ResponseEntity<List<Event>> searchEvents(@RequestParam String term) {
-        List<Event> events = eventService.searchEvents(term);
+    public ResponseEntity<List<EventListItemResponse>> searchEvents(@RequestParam String term) {
+        List<EventListItemResponse> events = eventService.searchEventListItems(term);
         return ResponseEntity.ok(events);
     }
 

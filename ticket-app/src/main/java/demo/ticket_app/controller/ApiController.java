@@ -55,6 +55,7 @@ public class ApiController {
         Map<String, Object> stats = switch (currentUser.getRole()) {
             case ADMIN -> buildPlatformStats();
             case ORGANIZER -> buildOrganizerStats(currentUser.getId());
+            case STAFF -> buildCustomerStats(currentUser.getId());
             case CUSTOMER -> buildCustomerStats(currentUser.getId());
         };
         payload.put("stats", stats);

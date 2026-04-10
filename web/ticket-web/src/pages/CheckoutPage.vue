@@ -304,10 +304,18 @@ async function placeOrder() {
     if (!pi && cart.error) throw new Error(cart.error)
 
     const paymentCode = pi?.paymentCode ?? pi?.paymentId ?? `sim-${Date.now()}`
+    const payUrl = String(pi?.payUrl || '').trim()
+    const isFakeGatewayUrl = /\/api\/checkout\/payments\/fake-gateway/i.test(payUrl)
 
-    // 3. Redirect to payment simulation page
+    // 3. Prefer real/external payment URLs. For backend fake-gateway endpoints,
+    // keep flow in-app to avoid 403 pages caused by missing Bearer header on browser navigation.
     cart.clear()
-    router.push({ path: `/payment/${paymentCode}`, query: { orderId } })
+    if (payUrl && !isFakeGatewayUrl) {
+      window.location.href = payUrl
+      return
+    }
+
+    router.push({ path: '/payment-result', query: { paymentCode, orderId } })
   } catch (e) {
     errors.global = extractApiError(e, cart.error || 'Payment failed. Please try again.').message
   } finally {

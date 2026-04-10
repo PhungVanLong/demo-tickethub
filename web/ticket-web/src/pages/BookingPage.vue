@@ -39,9 +39,27 @@
           <!-- Ticket selector -->
           <div class="card p-5">
             <TicketSelector
+              v-if="ticketTypes.length"
               :ticket-types="ticketTypes"
               v-model="selections"
             />
+            <div v-else class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+              <template v-if="event.status === 'pending'">
+                Sự kiện này chưa được duyệt hoặc chưa public. Vui lòng quay lại sau khi sự kiện được admin phê duyệt.
+              </template>
+              <template v-else-if="event.status === 'draft'">
+                Sự kiện đang ở trạng thái nháp. Vui lòng hoàn thiện và gửi duyệt để mở bán vé.
+              </template>
+              <template v-else-if="event.status === 'cancelled'">
+                Sự kiện này đã bị huỷ. Không thể đặt vé.
+              </template>
+              <template v-else-if="event.status === 'published' || event.status === 'approved'">
+                Sự kiện đã được duyệt nhưng hiện chưa có hạng vé nào mở bán hoặc đã hết vé. Vui lòng quay lại sau.
+              </template>
+              <template v-else>
+                Không có hạng vé khả dụng cho sự kiện này. Vui lòng thử lại sau.
+              </template>
+            </div>
           </div>
 
           <!-- Important notes -->

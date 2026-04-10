@@ -26,14 +26,6 @@
           >
             Dashboard
           </RouterLink>
-          <RouterLink
-            v-if="auth.isOrganizer && !auth.isAdmin"
-            to="/organizer"
-            class="btn-ghost text-sm"
-            active-class="!text-white !bg-zinc-800"
-          >
-            My Events
-          </RouterLink>
         </nav>
 
         <!-- Right side -->
@@ -52,12 +44,12 @@
           </button>
 
           <RouterLink
-            v-if="auth.isLoggedIn"
+            v-if="showCreateEventButton"
             to="/organizer/events/create"
             class="btn-primary text-sm py-2 px-4"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            Create Event
+            New Event
           </RouterLink>
 
           <!-- Logged in user -->
@@ -98,9 +90,9 @@
                     <p class="text-xs text-zinc-500 truncate">{{ auth.user.email }}</p>
                     <span
                       class="mt-1.5 inline-block"
-                      :class="auth.isAdmin ? 'badge-violet' : 'badge-blue'"
+                      :class="roleBadgeClass(auth.user?.role)"
                     >
-                      {{ auth.isAdmin ? 'Admin' : 'Member' }}
+                      {{ roleLabel(auth.user?.role) }}
                     </span>
                   </div>
 
@@ -129,6 +121,15 @@
                     >
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9v12m0-12l1.5-3h9l1.5 3m-12 0h12M9 9h6m-4 8h4"/></svg>
                       My Vouchers
+                    </RouterLink>
+                    <RouterLink
+                      v-if="showCreateEventButton"
+                      to="/organizer/events/create"
+                      class="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+                      @click="dropdownOpen = false"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                      New Event
                     </RouterLink>
                     <RouterLink
                       v-if="auth.isOrganizer && !auth.isAdmin"
@@ -187,6 +188,7 @@
         <div v-if="mobileOpen" class="md:hidden border-t border-zinc-800 py-3 space-y-1">
           <RouterLink v-if="auth.isAdmin" to="/admin" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">Dashboard</RouterLink>
           <RouterLink v-if="auth.isLoggedIn" to="/profile" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">My Tickets</RouterLink>
+          <RouterLink v-if="showCreateEventButton" to="/organizer/events/create" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">New Event</RouterLink>
           <RouterLink v-if="auth.isOrganizer && !auth.isAdmin" to="/organizer" class="flex items-center px-3 py-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors" @click="mobileOpen = false">My Events</RouterLink>
         </div>
       </Transition>
@@ -268,6 +270,11 @@ const dropdownRef = ref(null)
 const searchInput = ref(null)
 
 const eventStore    = useEventStore()
+const showCreateEventButton = computed(() => {
+  const role = String(auth.user?.role || '').toUpperCase()
+  return auth.isLoggedIn && (role === 'ORGANIZER' || role === 'CUSTOMER' || role === 'MEMBER')
+})
+
 const searchResults = computed(() => {
   if (!searchQuery.value.trim()) return []
   const q = searchQuery.value.toLowerCase()
@@ -279,6 +286,22 @@ const searchResults = computed(() => {
       (e.category ?? '').toLowerCase().includes(q)
   ).slice(0, 5)
 })
+
+function roleLabel(role) {
+  const normalized = String(role || '').toUpperCase()
+  if (normalized === 'ADMIN') return 'Admin'
+  if (normalized === 'ORGANIZER') return 'Organizer'
+  if (normalized === 'STAFF') return 'Staff'
+  return 'Member'
+}
+
+function roleBadgeClass(role) {
+  const normalized = String(role || '').toUpperCase()
+  if (normalized === 'ADMIN') return 'badge-violet'
+  if (normalized === 'ORGANIZER') return 'badge-blue'
+  if (normalized === 'STAFF') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 rounded-lg px-2 py-0.5 text-xs font-semibold'
+  return 'badge-blue'
+}
 
 watch(showSearch, async (val) => {
   if (val) {

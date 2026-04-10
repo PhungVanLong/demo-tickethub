@@ -14,7 +14,7 @@
         <p class="text-zinc-400 mb-1">Your order has been confirmed.</p>
         <p class="text-zinc-500 text-sm mb-8">Order ID: <span class="text-violet-400 font-mono">{{ orderId }}</span></p>
         <div class="flex gap-3 justify-center">
-          <RouterLink :to="`/order/${orderId}`" class="btn-primary">View Order</RouterLink>
+          <RouterLink to="/profile" class="btn-primary">View My Tickets</RouterLink>
           <RouterLink to="/" class="btn-secondary">Browse Events</RouterLink>
         </div>
       </div>
@@ -107,20 +107,46 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBookingStore } from '@/stores/booking.store'
 
 const route        = useRoute()
 const bookingStore = useBookingStore()
 
-const paymentCode = route.params.paymentCode
-const orderId     = route.query.orderId ?? ''
+const paymentCode = computed(() => {
+  const fromParams = route.params.paymentCode
+  const fromQuery = route.query.paymentCode
+  return String(fromParams || fromQuery || '').trim()
+})
+const orderId = computed(() => String(route.query.orderId ?? '').trim())
+const callbackStatus = computed(() => String(route.query.status || route.query.result || '').toLowerCase())
+const callbackMessage = computed(() => String(route.query.message || route.query.error || '').trim())
 
 const result     = ref(null)   // null | 'success' | 'failed'
 const processing = ref(false)
 const simChoice  = ref(null)
 const errorMsg   = ref('')
+
+onMounted(async () => {
+  const status = callbackStatus.value
+  if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) {
+    result.value = 'failed'
+    errorMsg.value = callbackMessage.value || 'Your payment could not be processed.'
+    return
+  }
+
+  const polled = await pollOrderStatus(orderId.value)
+  if (polled) {
+    return
+  }
+
+  if (['success', 'paid', 'confirmed', 'ok'].includes(status)) {
+    await bookingStore.fetchMyOrders()
+    await warmUpIssuedTickets(orderId.value)
+    result.value = 'success'
+  }
+})
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -141,19 +167,53 @@ async function warmUpIssuedTickets(orderId, attempts = 4, delayMs = 700) {
   }
 }
 
+async function pollOrderStatus(orderIdentifier, attempts = 8, delayMs = 1200) {
+  if (!orderIdentifier) return false
+
+  for (let i = 0; i < attempts; i += 1) {
+    const latestOrder = await bookingStore.fetchOrderById(orderIdentifier)
+    const status = String(latestOrder?.status || latestOrder?.orderStatus || '').toLowerCase()
+
+    if (status === 'confirmed') {
+      await bookingStore.fetchMyOrders()
+      await warmUpIssuedTickets(orderIdentifier)
+      result.value = 'success'
+      return true
+    }
+
+    if (status === 'cancelled' || status === 'refunded') {
+      result.value = 'failed'
+      errorMsg.value = 'Payment did not complete successfully.'
+      return true
+    }
+
+    if (i < attempts - 1) {
+      await sleep(delayMs)
+    }
+  }
+
+  return false
+}
+
 async function simulate(succeed) {
+  if (!paymentCode.value) {
+    errorMsg.value = 'Payment code is missing. Please restart checkout.'
+    result.value = 'failed'
+    return
+  }
+
   processing.value = true
   simChoice.value  = succeed ? 'success' : 'failed'
   errorMsg.value   = ''
   try {
-    const res = await bookingStore.fakeWebhook(paymentCode, succeed)
-    if (succeed) {
+    const res = await bookingStore.fakeWebhook(paymentCode.value, succeed)
+    if (succeed && res) {
       await bookingStore.fetchMyOrders()
-      await warmUpIssuedTickets(orderId)
+      await warmUpIssuedTickets(orderId.value)
       result.value = 'success'
     } else {
       result.value = 'failed'
-      errorMsg.value = res?.message || 'Payment was declined.'
+      errorMsg.value = res?.message || bookingStore.error || 'Payment was declined.'
     }
   } catch (e) {
     errorMsg.value = e?.message || 'Something went wrong.'

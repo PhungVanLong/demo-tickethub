@@ -60,29 +60,47 @@
         <!-- Valid From -->
         <div>
           <label class="block text-sm font-medium text-zinc-300 mb-1">Valid From *</label>
-          <input
-            v-model="formData.validFrom"
-            type="date"
-            class="w-full px-4 py-2 bg-zinc-950 text-zinc-200 border border-zinc-700 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-            readonly
-            @focus="openDatePicker"
-            @keydown.prevent
-            required
-          />
+          <div class="flex gap-2">
+            <input
+              ref="validFromInput"
+              v-model="formData.validFrom"
+              type="date"
+              class="flex-1 px-4 py-2 bg-zinc-950 text-zinc-200 border border-zinc-700 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+              @click="openDatePicker"
+              @focus="openDatePicker"
+              required
+            />
+            <button
+              type="button"
+              class="btn btn-secondary px-3 whitespace-nowrap"
+              @click="pickDate('from')"
+            >
+              Pick
+            </button>
+          </div>
         </div>
 
         <!-- Valid Until -->
         <div>
           <label class="block text-sm font-medium text-zinc-300 mb-1">Valid Until *</label>
-          <input
-            v-model="formData.validUntil"
-            type="date"
-            class="w-full px-4 py-2 bg-zinc-950 text-zinc-200 border border-zinc-700 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-            readonly
-            @focus="openDatePicker"
-            @keydown.prevent
-            required
-          />
+          <div class="flex gap-2">
+            <input
+              ref="validUntilInput"
+              v-model="formData.validUntil"
+              type="date"
+              class="flex-1 px-4 py-2 bg-zinc-950 text-zinc-200 border border-zinc-700 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+              @click="openDatePicker"
+              @focus="openDatePicker"
+              required
+            />
+            <button
+              type="button"
+              class="btn btn-secondary px-3 whitespace-nowrap"
+              @click="pickDate('until')"
+            >
+              Pick
+            </button>
+          </div>
         </div>
 
         <!-- Error Message -->
@@ -207,6 +225,8 @@ const loading = computed(() => salesStore.loading)
 
 const showCreateForm = ref(false)
 const formError = ref(null)
+const validFromInput = ref(null)
+const validUntilInput = ref(null)
 
 const formData = ref({
   name: '',
@@ -306,6 +326,18 @@ function openDatePicker(event) {
   if (typeof event?.target?.showPicker === 'function') {
     event.target.showPicker()
   }
+}
+
+function pickDate(type) {
+  const target = type === 'from' ? validFromInput.value : validUntilInput.value
+  if (!target) return
+
+  if (typeof target.showPicker === 'function') {
+    target.showPicker()
+    return
+  }
+
+  target.focus()
 }
 
 onMounted(async () => {

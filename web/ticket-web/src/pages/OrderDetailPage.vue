@@ -94,9 +94,13 @@
                 <p class="text-sm font-semibold text-violet-400 mt-1">
                   {{ formatPrice(ticket.price * (issuedTickets.length ? 1 : ticket.qty)) }}
                 </p>
+                <p v-if="ticket.holderName || ticket.holderEmail" class="text-xs text-zinc-500 mt-2">
+                  Buyer: {{ ticket.holderName || 'Unknown' }}
+                  <span v-if="ticket.holderEmail"> · {{ ticket.holderEmail }}</span>
+                </p>
                 <div class="mt-2 flex flex-wrap gap-2 text-xs">
                   <span v-if="ticket.seatLabel" class="badge-blue">Seat {{ ticket.seatLabel }}</span>
-                  <span v-if="ticket.status" class="badge-green capitalize">{{ ticket.status }}</span>
+                  <span v-if="ticket.status" :class="ticketStatusBadge(ticket.status)">{{ ticketStatusLabel(ticket.status) }}</span>
                   <span v-if="ticket.usedAt" class="badge-yellow">Used {{ formatDate(ticket.usedAt) }}</span>
                 </div>
               </div>
@@ -190,6 +194,7 @@ onMounted(async () => {
   const resolvedOrderId = order.value?.orderId || order.value?.id || id
   ticketsLoading.value = true
   issuedTickets.value = await bookingStore.fetchOrderTickets(resolvedOrderId, true)
+  hydrateOrderFromTickets()
   ticketsLoading.value = false
   loading.value = false
 })
@@ -202,6 +207,22 @@ const displayTickets = computed(() => {
   if (issuedTickets.value.length) return issuedTickets.value
   return order.value?.tickets ?? []
 })
+
+function hydrateOrderFromTickets() {
+  if (!order.value || !issuedTickets.value.length) return
+
+  const first = issuedTickets.value.find((ticket) => ticket) || null
+  if (!first) return
+
+  order.value = {
+    ...order.value,
+    eventTitle: order.value.eventTitle || first.eventTitle || 'Event',
+    eventDate: order.value.eventDate || first.eventDate || null,
+    eventTime: order.value.eventTime || first.eventTime || null,
+    venue: order.value.venue || first.venue || null,
+    image: order.value.image || first.eventBannerUrl || '',
+  }
+}
 
 function formatPrice(val) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
@@ -246,5 +267,15 @@ async function downloadTicket(ticket) {
   } catch {
     alert('Failed to generate ticket QR image')
   }
+}
+
+function ticketStatusBadge(status) {
+  if (status === 'used') return 'bg-zinc-700 text-zinc-200 border border-zinc-600 rounded-lg px-2 py-0.5 text-xs font-semibold'
+  if (status === 'cancelled') return 'badge-red capitalize'
+  return 'badge-blue capitalize'
+}
+
+function ticketStatusLabel(status) {
+  return { active: 'Active', used: 'Used', cancelled: 'Cancelled' }[status] ?? status
 }
 </script>

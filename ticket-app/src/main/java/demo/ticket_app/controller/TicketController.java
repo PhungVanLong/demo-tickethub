@@ -1,16 +1,22 @@
 package demo.ticket_app.controller;
 
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import demo.ticket_app.config.SecurityUtils;
 import demo.ticket_app.dto.ticket.TicketResponse;
 import demo.ticket_app.entity.Ticket;
 import demo.ticket_app.service.TicketService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/tickets")
@@ -28,7 +34,7 @@ public class TicketController {
     public ResponseEntity<List<TicketResponse>> getMyTickets() {
         UUID userId = securityUtils.getCurrentUserId();
         List<TicketResponse> responses = ticketService.getTicketsByUserId(userId).stream()
-                .map(TicketResponse::from)
+                .map(ticketService::toEnrichedResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
     }
@@ -40,7 +46,7 @@ public class TicketController {
     public ResponseEntity<List<TicketResponse>> getTicketsByOrder(@PathVariable UUID orderId) {
         List<Ticket> tickets = ticketService.getTicketsByOrderId(orderId);
         List<TicketResponse> responses = tickets.stream()
-                .map(TicketResponse::from)
+                .map(ticketService::toEnrichedResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
     }
@@ -51,7 +57,7 @@ public class TicketController {
     @GetMapping("/{ticketId}")
     public ResponseEntity<TicketResponse> getTicketDetail(@PathVariable UUID ticketId) {
         Ticket ticket = ticketService.getTicketById(ticketId);
-        return ResponseEntity.ok(TicketResponse.from(ticket));
+        return ResponseEntity.ok(ticketService.toEnrichedResponse(ticket));
     }
 
     /**
@@ -59,8 +65,8 @@ public class TicketController {
      */
     @PostMapping("/{ticketId}/use")
     public ResponseEntity<TicketResponse> useTicket(@PathVariable UUID ticketId) {
-        Ticket ticket = ticketService.useTicket(ticketId);
-        return ResponseEntity.ok(TicketResponse.from(ticket));
+        Ticket ticket = ticketService.useTicket(ticketId, securityUtils.getCurrentUser());
+        return ResponseEntity.ok(ticketService.toEnrichedResponse(ticket));
     }
 
     /**
@@ -70,6 +76,6 @@ public class TicketController {
     @GetMapping("/{ticketId}/download")
     public ResponseEntity<TicketResponse> downloadTicket(@PathVariable UUID ticketId) {
         Ticket ticket = ticketService.getTicketById(ticketId);
-        return ResponseEntity.ok(TicketResponse.from(ticket));
+        return ResponseEntity.ok(ticketService.toEnrichedResponse(ticket));
     }
 }

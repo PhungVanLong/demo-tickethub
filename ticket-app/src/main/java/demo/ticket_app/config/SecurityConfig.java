@@ -67,21 +67,24 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/users/*/demote-customer").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/users/*/activate").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/users/*/deactivate").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/users/staff").hasRole("ORGANIZER")
                 .requestMatchers("/api/users/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/stats/platform").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/stats/organizer/**").hasAnyRole("ORGANIZER", "ADMIN")
                 // Customer/Organizer/Admin can submit event idea
                 .requestMatchers(HttpMethod.POST, "/api/events").hasAnyRole("CUSTOMER", "ORGANIZER", "ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/events/*/staff").hasRole("ORGANIZER")
                 .requestMatchers(HttpMethod.PUT, "/api/events/**").hasAnyRole("ORGANIZER", "ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/events/**").hasAnyRole("ORGANIZER", "ADMIN")
-                .requestMatchers("/api/events/*/seat-maps/**").hasAnyRole("ORGANIZER", "ADMIN")
+                .requestMatchers("/api/events/*/seat-maps/**").hasAnyRole("CUSTOMER", "ORGANIZER", "ADMIN")
                 // Vouchers
                 .requestMatchers(HttpMethod.GET, "/api/vouchers/me").authenticated()
                 .requestMatchers(HttpMethod.POST, "/api/vouchers/validate").authenticated()
                 .requestMatchers(HttpMethod.POST, "/api/vouchers/events/**").hasAnyRole("ORGANIZER", "ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/vouchers/organizer").hasAnyRole("ORGANIZER", "ADMIN")
                 // Tickets
+                .requestMatchers(HttpMethod.POST, "/api/tickets/*/use").hasAnyRole("STAFF", "ADMIN")
                 .requestMatchers("/api/tickets/**").authenticated()
                 // Any authenticated user
                 .anyRequest().authenticated()

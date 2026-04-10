@@ -4,6 +4,50 @@ import { ref, computed } from 'vue'
 import { eventService } from '@/services/event.service'
 import { normalizeEvent } from '@/stores/event.store'
 import api from '@/services/api'
+import { decodeToken } from '@/utils/jwt'
+import { extractApiError } from '@/utils/apiError'
+
+function parseValidationFieldErrors(error) {
+    const data = error?.response?.data
+    const result = {}
+
+    if (!data) return result
+
+    if (Array.isArray(data.errors)) {
+        data.errors.forEach((item) => {
+            if (!item) return
+            if (typeof item === 'string') return
+            const field = String(item.field || item.name || '').trim()
+            const message = String(item.message || item.defaultMessage || '').trim()
+            if (field && message && !result[field]) {
+                result[field] = message
+            }
+        })
+    }
+
+    if (data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors)) {
+        Object.entries(data.errors).forEach(([field, value]) => {
+            if (!field || result[field]) return
+            if (Array.isArray(value) && value.length) {
+                result[field] = String(value[0])
+            } else if (value != null && value !== '') {
+                result[field] = String(value)
+            }
+        })
+    }
+
+    if (Array.isArray(data.violations)) {
+        data.violations.forEach((item) => {
+            const field = String(item?.field || '').trim()
+            const message = String(item?.message || item?.defaultMessage || '').trim()
+            if (field && message && !result[field]) {
+                result[field] = message
+            }
+        })
+    }
+
+    return result
+}
 
 export const useOrganizerStore = defineStore('organizer', () => {
     const myEvents = ref([])
@@ -12,7 +56,11 @@ export const useOrganizerStore = defineStore('organizer', () => {
     const formLoading = ref(false)
     const error = ref(null)
     const formError = ref(null)
+    const formFieldErrors = ref({})
     const formWarning = ref(null)
+    const staffLoading = ref(false)
+    const staffError = ref(null)
+    const staffSuccess = ref('')
 
     const pendingCount = computed(() =>
         myEvents.value.filter((e) => ['pending', 'draft'].includes(e.status)).length
@@ -20,6 +68,12 @@ export const useOrganizerStore = defineStore('organizer', () => {
     const publishedCount = computed(() =>
         myEvents.value.filter((e) => ['published', 'approved'].includes(e.status)).length
     )
+
+    function isMemberLikeRole() {
+        const token = localStorage.getItem('auth_token')
+        const role = String(decodeToken(token)?.role || '').toUpperCase()
+        return role === 'CUSTOMER' || role === 'MEMBER'
+    }
 
     // ── Actions ────────────────────────────────────────────────────────────────
     async function fetchMyEvents(organizerId) {
@@ -55,6 +109,7 @@ export const useOrganizerStore = defineStore('organizer', () => {
     async function createFullEvent({ eventData, seatMapData, tiers = [] }) {
         formLoading.value = true
         formError.value = null
+        formFieldErrors.value = {}
         formWarning.value = null
         try {
             // 1. Create event
@@ -69,7 +124,9 @@ export const useOrganizerStore = defineStore('organizer', () => {
                     seatMapId = seatMap?.id ?? seatMap?.seatMapId ?? null
                 } catch (e) {
                     if (e?.response?.status === 403) {
-                        formWarning.value = 'Event created, but your role is not allowed to create seat map/ticket tiers.'
+                        if (!isMemberLikeRole()) {
+                            formWarning.value = 'Event created, but your role is not allowed to create seat map/ticket tiers.'
+                        }
                     } else {
                         throw e
                     }
@@ -84,7 +141,9 @@ export const useOrganizerStore = defineStore('organizer', () => {
                     ))
                 } catch (e) {
                     if (e?.response?.status === 403) {
-                        formWarning.value = 'Event created, but your role is not allowed to create ticket tiers.'
+                        if (!isMemberLikeRole()) {
+                            formWarning.value = 'Event created, but your role is not allowed to create ticket tiers.'
+                        }
                     } else {
                         throw e
                     }
@@ -95,7 +154,9 @@ export const useOrganizerStore = defineStore('organizer', () => {
             myEvents.value.unshift(norm)
             return norm
         } catch (e) {
-            formError.value = e.response?.data?.message || 'Failed to create event'
+            const parsed = extractApiError(e, 'Failed to create event')
+            formError.value = parsed.message
+            formFieldErrors.value = parseValidationFieldErrors(e)
             return null
         } finally {
             formLoading.value = false
@@ -105,6 +166,7 @@ export const useOrganizerStore = defineStore('organizer', () => {
     async function createOrganizerRequest(eventData) {
         formLoading.value = true
         formError.value = null
+        formFieldErrors.value = {}
         formWarning.value = null
         try {
             const event = await eventService.create(eventData)
@@ -113,7 +175,9 @@ export const useOrganizerStore = defineStore('organizer', () => {
             formWarning.value = 'Request submitted. Admin approval will promote your account to Organizer.'
             return norm
         } catch (e) {
-            formError.value = e.response?.data?.message || 'Failed to submit organizer request'
+            const parsed = extractApiError(e, 'Failed to submit organizer request')
+            formError.value = parsed.message
+            formFieldErrors.value = parseValidationFieldErrors(e)
             return null
         } finally {
             formLoading.value = false
@@ -123,6 +187,7 @@ export const useOrganizerStore = defineStore('organizer', () => {
     async function updateMyEvent(id, data) {
         formLoading.value = true
         formError.value = null
+        formFieldErrors.value = {}
         try {
             const updated = await eventService.update(id, data)
             const norm = normalizeEvent(updated)
@@ -130,7 +195,9 @@ export const useOrganizerStore = defineStore('organizer', () => {
             if (idx !== -1) myEvents.value[idx] = norm
             return norm
         } catch (e) {
-            formError.value = e.response?.data?.message || 'Failed to update event'
+            const parsed = extractApiError(e, 'Failed to update event')
+            formError.value = parsed.message
+            formFieldErrors.value = parseValidationFieldErrors(e)
             return null
         } finally {
             formLoading.value = false
@@ -148,17 +215,39 @@ export const useOrganizerStore = defineStore('organizer', () => {
         }
     }
 
+    async function createEventStaff(eventId, payload) {
+        staffLoading.value = true
+        staffError.value = null
+        staffSuccess.value = ''
+        try {
+            const response = await eventService.createEventStaff(eventId, payload)
+            const staff = response?.data ?? response
+            staffSuccess.value = `Staff account created: ${staff?.email || payload?.email || 'success'}`
+            return staff
+        } catch (e) {
+            staffError.value = e.response?.data?.message || 'Failed to create staff account for this event'
+            return null
+        } finally {
+            staffLoading.value = false
+        }
+    }
+
     function clear() {
         myEvents.value = []
         stats.value = null
         error.value = null
         formError.value = null
+        formFieldErrors.value = {}
         formWarning.value = null
+        staffError.value = null
+        staffSuccess.value = ''
     }
 
     return {
-        myEvents, stats, loading, formLoading, error, formError, formWarning,
+        myEvents, stats, loading, formLoading, error, formError, formFieldErrors, formWarning,
+        staffLoading, staffError, staffSuccess,
         pendingCount, publishedCount,
-        fetchMyEvents, fetchStats, createFullEvent, createOrganizerRequest, updateMyEvent, deleteMyEvent, clear,
+        fetchMyEvents, fetchStats, createFullEvent, createOrganizerRequest, updateMyEvent, deleteMyEvent,
+        createEventStaff, clear,
     }
 })
