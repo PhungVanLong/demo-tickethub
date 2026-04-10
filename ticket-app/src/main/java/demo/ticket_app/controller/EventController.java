@@ -68,22 +68,22 @@ public class EventController {
     }
 
     @GetMapping("/organizer/{organizerId}")
-    public ResponseEntity<List<Event>> getEventsByOrganizer(@PathVariable UUID organizerId) {
-        List<Event> events = eventService.getEventsByOrganizer(organizerId);
+    public ResponseEntity<List<EventListItemResponse>> getEventsByOrganizer(@PathVariable UUID organizerId) {
+        List<EventListItemResponse> events = eventService.getEventListByOrganizer(organizerId);
         return ResponseEntity.ok(events);
     }
 
     @GetMapping("/city/{city}")
-    public ResponseEntity<List<Event>> getEventsByCity(@PathVariable String city) {
-        List<Event> events = eventService.getEventsByCity(city);
+    public ResponseEntity<List<EventListItemResponse>> getEventsByCity(@PathVariable String city) {
+        List<EventListItemResponse> events = eventService.getEventListByCity(city);
         return ResponseEntity.ok(events);
     }
 
     @GetMapping("/city/{city}/status/{status}")
-    public ResponseEntity<List<Event>> getEventsByCityAndStatus(
+    public ResponseEntity<List<EventListItemResponse>> getEventsByCityAndStatus(
             @PathVariable String city,
             @PathVariable EventStatus status) {
-        List<Event> events = eventService.getEventsByCityAndStatus(city, status);
+        List<EventListItemResponse> events = eventService.getEventListByCityAndStatus(city, status);
         return ResponseEntity.ok(events);
     }
 
@@ -155,8 +155,8 @@ public class EventController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<Event>> searchEvents(@RequestParam String term) {
-        List<Event> events = eventService.searchEvents(term);
+    public ResponseEntity<List<EventListItemResponse>> searchEvents(@RequestParam String term) {
+        List<EventListItemResponse> events = eventService.searchEventListItems(term);
         return ResponseEntity.ok(events);
     }
 

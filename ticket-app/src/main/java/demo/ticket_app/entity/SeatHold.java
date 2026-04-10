@@ -8,8 +8,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -59,10 +57,6 @@ public class SeatHold {
 
     @Column(name = "order_id")
     private UUID orderId;
-
-    @ManyToOne
-    @JoinColumn(name = "seat_id", insertable = false, updatable = false)
-    private Seat seat;
 
     @PrePersist
     protected void onCreate() {

@@ -123,12 +123,16 @@ Legend:
 | `POST /api/admin/vouchers/platform` | - | - | - | Y | Create global platform voucher (`applyOn = ALL`) |
 | `POST /api/vouchers/validate` | Y | Y | Y | Y | Auth required |
 | `POST /api/tickets/{ticketId}/use` | - | - | Y* | Y | Staff can only scan tickets of linked organizer |
+| `DELETE /api/events/{eventId}` | - | Y* | - | Y | Organizer owner or admin can delete event |
+| `DELETE /api/admin/events/{eventId}` | - | - | - | Y | Admin-only API to delete any event |
 
 FE implementation notes:
 
-- Hide action buttons if role is not eligible by table above.
-- Even when button is shown (`Y*`), backend can still return `403`/`400` due to ownership or state checks.
-- Keep a standard error toast mapping: `401` (login again), `403` (no permission), `400` (invalid state/input), `404` (resource not found).
+- Hide action xóa sự kiện nếu không phải admin hoặc không phải organizer owner.
+- Để xóa sự kiện với quyền admin, gọi API: `DELETE /api/admin/events/{eventId}` (chỉ role ADMIN, không cần ownership).
+- Nếu là organizer owner, dùng API: `DELETE /api/events/{eventId}`.
+- Ngay cả khi hiển thị nút xóa (`Y*`), backend vẫn có thể trả về `403`/`400` nếu không đủ quyền hoặc trạng thái không hợp lệ.
+- Mapping lỗi toast: `401` (login lại), `403` (không đủ quyền), `400` (dữ liệu/trạng thái không hợp lệ), `404` (không tìm thấy).
 
 ## 4. Event Contracts
 
@@ -246,6 +250,56 @@ Response item shape is aligned with `EventListItemResponse` and includes:
 - `totalCapacity`
 
 This lets admin dashboard/event moderation screens display price and quantity metrics directly without extra per-event calls.
+
+
+### 4.5 Tạo sự kiện và hạng vé (chuẩn hóa UI/logic)
+
+#### Tạo sự kiện (POST /api/events)
+
+- **Trường bắt buộc:** `title`, `venue`, `city`, `startTime`, `endTime`.
+- **Trường tùy chọn:** `category`, `country`, `bannerUrl`, `imageUrl`, `featured`, `tags`.
+- **Tạo auto tier:**
+  - Nếu truyền `defaultPrice > 0` và `defaultTierQuantity >= 1`, backend sẽ tự tạo seat map + tier mặc định (General Admission).
+  - Nếu không truyền hoặc `defaultPrice <= 0`, chỉ tạo event, không có tier/seat map mặc định.
+- **Sau khi tạo:** Event luôn ở trạng thái `PENDING`, chờ admin duyệt mới public.
+
+**Ví dụ request tạo event có auto tier:**
+```json
+{
+  "title": "Live Show A",
+  "venue": "My Dinh National Stadium",
+  "city": "Hanoi",
+  "startTime": "2026-06-20T19:00:00",
+  "endTime": "2026-06-20T22:00:00",
+  "defaultPrice": 5000000,
+  "defaultTierQuantity": 200
+}
+```
+
+#### Tạo hạng vé (ticket tier) cho sự kiện
+
+- Sau khi event đã tạo, organizer có thể tạo thêm tier qua API `/api/ticket-tiers`.
+- **Trường bắt buộc:** `seatMapId`, `name`, `tierType`, `price > 0`, `quantityTotal > 0`.
+- Nếu tạo tier mới, auto tier sẽ bị ẩn khỏi các API trả về (FE chỉ hiển thị tier thật).
+
+**Ví dụ request tạo tier:**
+```json
+{
+  "seatMapId": 123,
+  "name": "VIP",
+  "tierType": "VIP",
+  "price": 1200000,
+  "quantityTotal": 50,
+  "colorCode": "#FFD700",
+  "saleStart": "2026-06-20T19:00:00",
+  "saleEnd": "2026-06-20T22:00:00"
+}
+```
+
+#### Lưu ý UI/FE:
+- Luôn validate các trường bắt buộc trước khi gửi request.
+- Nếu event chưa có tier, UI nên nhắc organizer tạo tier để có thể bán vé.
+- Ẩn/disable các action không hợp lệ theo role và trạng thái event.
 
 ## 5. Seat Map and Ticket Options
 
@@ -468,8 +522,40 @@ Important behavior:
 - For now, FE should treat hold/confirm flow as seat-lock workflow and checkout as pricing/order workflow.
 
 ### 6.5 Voucher contracts (Organizer + Admin)
+### [BỔ SUNG] Logic voucher platform liên kết PlatformSale
+### [BỔ SUNG] API kiểm tra trạng thái PlatformSale theo voucher platform
 
-Validate voucher before checkout:
+### [BỔ SUNG] API lấy danh sách voucher thuộc các platform sale đang active
+
+- Endpoint mới: `GET /api/admin/platform-sales/active-vouchers` (public, không cần auth)
+- Trả về list voucher (VoucherResponse) thuộc các platform sale đang active, FE có thể dùng để hiển thị trực tiếp trong "My Voucher" hoặc các nơi cần show voucher platform.
+
+- Endpoint mới: `GET /api/platform-sales/voucher/{voucherCode}` (public, không cần auth)
+- Trả về thông tin PlatformSale liên kết với voucherCode (nếu có):
+
+```json
+{
+  "id": "uuid",
+  "name": "Platform Sale Tháng 4",
+  "description": "Giảm giá toàn hệ thống tháng 4",
+  "discountPercentage": 10.0,
+  "validFrom": "2026-04-01T00:00:00",
+  "validUntil": "2026-04-30T23:59:59",
+  "isActive": true,
+  "voucherId": "uuid",
+  "voucherCode": "PLAT-123456789"
+}
+```
+
+- FE có thể gọi endpoint này để kiểm tra trạng thái PlatformSale của voucher platform trước khi cho phép user sử dụng.
+
+- Voucher platform (tạo qua `/api/admin/vouchers/platform`) chỉ usable/hiển thị khi có bản ghi PlatformSale active liên kết voucher đó (liên kết qua khóa ngoại `platform_sale.voucher_id`).
+- Khi gọi `GET /api/vouchers/me`, backend chỉ trả về các voucher platform có liên kết PlatformSale đang active (trạng thái active, còn hạn, chưa bị disable).
+- Khi validate voucher platform (`POST /api/vouchers/validate`), backend kiểm tra trạng thái PlatformSale liên kết. Nếu PlatformSale hết hạn hoặc bị disable, voucher sẽ không usable, trả về lỗi.
+- FE không cần gọi API riêng để lấy PlatformSale, chỉ cần lấy voucher như bình thường qua `/api/vouchers/me`.
+- Nếu voucher platform không còn active (PlatformSale hết hạn hoặc bị disable), sẽ không usable/không hiển thị ở "My Voucher".
+
+#### Validate voucher before checkout
 
 - `POST /api/vouchers/validate` (auth required)
 - Request:
@@ -484,24 +570,95 @@ Validate voucher before checkout:
 
 - Response includes `valid`, `message`, `calculatedDiscount`, `voucherType`, `applyOn`, `eventId`.
 
-Create event voucher (Organizer or Admin for a specific event):
+**Lưu ý:**
+- Khi validate voucher platform, backend kiểm tra trạng thái PlatformSale liên kết. Nếu PlatformSale hết hạn hoặc bị disable, voucher sẽ không usable, trả về lỗi cho FE.
+
+#### Get my available vouchers
+
+`GET /api/vouchers/me` (auth required)
+Returns all vouchers the current user can use:
+  - Personal vouchers assigned to the user (e.g. monthly vouchers).
+  - Platform-wide vouchers created by Admin (`applyOn = ALL`, `assignedToUser = null`).
+  - Platform-wide vouchers (voucher platform) **chỉ trả về nếu có bản ghi PlatformSale active liên kết voucher đó** (`applyOn = ALL`, `assignedToUser = null`, liên kết PlatformSale).
+  - Expired, inactive hoặc không có PlatformSale active sẽ bị loại khỏi danh sách usable voucher.
+
+#### Create event voucher (Organizer or Admin for a specific event)
 
 - `POST /api/vouchers/events/{eventId}`
 - Access: `ORGANIZER` or `ADMIN`
 - Voucher behavior: `voucherType = ORGANIZER_EVENT`, `applyOn = SPECIFIC_EVENT`.
 - Scope: only applies to the given `{eventId}`.
+- Request:
 
-Create platform-wide voucher (Admin):
+```json
+{
+  "name": "Event Summer Sale",
+  "discountType": "PERCENTAGE",
+  "discountValue": 10,
+  "minOrderValue": 500000,
+  "usageLimit": 100,
+  "validFrom": "2026-04-06T00:00:00",
+  "validUntil": "2026-05-01T00:00:00"
+}
+```
+
+- Required fields: `name`, `discountType`, `discountValue`, `validFrom`, `validUntil`.
+- Optional fields: `minOrderValue`, `usageLimit` (null = unlimited).
+- Validation rules:
+  - `validUntil` must be after `validFrom`.
+  - If `discountType = PERCENTAGE`, `discountValue` must be <= 100.
+  - Event must be `PUBLISHED`.
+
+#### Create platform-wide voucher (Admin)
 
 - `POST /api/admin/vouchers/platform`
 - Access: `ADMIN` only
 - Voucher behavior: `voucherType = PLATFORM`, `applyOn = ALL`, `assignedToUser = null`.
 - Scope: can be used on all events (subject to validity window, usage limit, min order value).
+- Request:
 
-Checkout behavior (important):
+```json
+{
+  "name": "Platform April",
+  "discountType": "FIXED_AMOUNT",
+  "discountValue": 50000,
+  "minOrderValue": 200000,
+  "usageLimit": 1000,
+  "validFrom": "2026-04-06T00:00:00",
+  "validUntil": "2026-05-01T00:00:00"
+}
+```
 
-- `POST /api/checkout/quote` and `POST /api/checkout/orders` now use the same voucher validation rules as `POST /api/vouchers/validate`.
+- Required fields: `name`, `discountType`, `discountValue`, `validFrom`, `validUntil`.
+- Optional fields: `minOrderValue`, `usageLimit` (null = unlimited).
+- Validation rules: same as event voucher.
+- Response includes generated `code` (auto-generated by backend, not in request):
+
+```json
+{
+  "id": "uuid",
+  "code": "VOC-1775123456789",
+  "validFrom": "2026-04-06T00:00:00",
+  "validUntil": "2026-05-01T00:00:00"
+}
+```
+
+- FE should display the returned `code` for admin to copy/share.
+
+#### `discountType` values
+
+- `PERCENTAGE`: discount as percent of order subtotal (0–100).
+- `FIXED_AMOUNT`: discount as fixed VND amount (deducted from subtotal, capped at order amount).
+
+#### Checkout voucher behavior (important)
+
+- `POST /api/checkout/quote` and `POST /api/checkout/orders` use the same voucher validation rules as `POST /api/vouchers/validate`.
 - If voucher is invalid for user/event/order context, backend returns `400` with validation message.
+- When order is created successfully with a voucher:
+  - Backend increments `usedCount` on the voucher (enforces `usageLimit`).
+  - Backend records a `VoucherUsage` entry linking voucher, order, and user.
+  - Concurrent checkout is protected by row-level lock to prevent exceeding usage limit.
+- FE does not need to call any extra "consume" API — it happens automatically inside order creation.
 
 ## 7. Orders (Frontend Note - Fully Updated)
 
@@ -1020,3 +1177,7 @@ Role behavior:
 - Organizer header should use `organizer.name` and `organizer.verified`.
 - Ticket options block should use `/api/checkout/events/{eventId}/tiers`.
 - Each ticket response now includes full buyer, event, and tier context for rich display.
+  
+**Voucher platform:**
+- Chỉ usable/hiển thị khi có bản ghi PlatformSale active liên kết voucher đó. FE không cần xử lý gì thêm, chỉ cần lấy danh sách voucher như bình thường qua `/api/vouchers/me`.
+- Nếu voucher platform không còn active (PlatformSale hết hạn hoặc bị disable), sẽ không usable/không hiển thị ở "My Voucher".

@@ -1,5 +1,13 @@
 package demo.ticket_app.service;
 
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
 import demo.ticket_app.dto.tickettier.CreateTicketTierRequest;
 import demo.ticket_app.entity.Event;
 import demo.ticket_app.entity.SeatMap;
@@ -9,18 +17,13 @@ import demo.ticket_app.repository.EventRepository;
 import demo.ticket_app.repository.SeatMapRepository;
 import demo.ticket_app.repository.TicketTierRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class TicketTierService {
+
+    private static final String AUTO_DEFAULT_TIER_NAME = "General Admission (Auto)";
 
     private final TicketTierRepository ticketTierRepository;
     private final SeatMapRepository seatMapRepository;
@@ -39,6 +42,15 @@ public class TicketTierService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the organizer of this event");
         }
         validateOwnership(eventId, seatMapId);
+
+        // Once organizer configures a real tier, drop auto-generated default tiers for this event.
+        List<TicketTier> autoTiers = ticketTierRepository.findBySeatMapEventId(eventId)
+                .stream()
+                .filter(tier -> AUTO_DEFAULT_TIER_NAME.equals(tier.getName()))
+                .toList();
+        if (!autoTiers.isEmpty()) {
+            ticketTierRepository.deleteAll(autoTiers);
+        }
 
         TicketTier tier = TicketTier.builder()
                 .seatMapId(seatMapId)

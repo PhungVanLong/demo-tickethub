@@ -106,6 +106,14 @@ public class CheckoutService {
             ticketTierRepository.save(tier);
         }
 
+        voucherService.consumeVoucher(
+            request.voucherCode(),
+            request.eventId(),
+            pricingResult.subtotal(),
+            currentUserId,
+            savedOrder.getId()
+        );
+
         return new CreateCheckoutOrderResponse(
                 savedOrder.getId(),
                 savedOrder.getOrderCode(),

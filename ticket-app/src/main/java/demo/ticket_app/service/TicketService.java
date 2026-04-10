@@ -42,16 +42,18 @@ public class TicketService {
      * Create tickets for a specific order (called after successful payment)
      */
     public List<Ticket> createTicketsForOrder(UUID orderId) {
+        log.info("[Ticket] Bắt đầu tạo vé cho order {}", orderId);
         List<OrderItem> orderItems = orderItemRepository.findByOrderId(orderId);
 
         if (orderItems.isEmpty()) {
-            log.warn("No order items found for order {}", orderId);
+            log.warn("[Ticket] Không tìm thấy order items cho order {}", orderId);
             return new ArrayList<>();
         }
 
         List<Ticket> ticketsToCreate = new ArrayList<>();
 
         for (OrderItem item : orderItems) {
+            log.info("[Ticket] Tạo {} vé cho orderItem {} (tier: {}, quantity: {})", item.getQuantity(), item.getId(), item.getTicketTierId(), item.getQuantity());
             // Create N tickets based on quantity
             for (int i = 0; i < item.getQuantity(); i++) {
                 Ticket ticket = Ticket.builder()
@@ -59,19 +61,22 @@ public class TicketService {
                         .ticketStatus(TicketStatus.ACTIVE)
                         .build();
                 ticketsToCreate.add(ticket);
+                log.debug("[Ticket] Chuẩn bị tạo ticket: orderItemId={}, status={}", item.getId(), TicketStatus.ACTIVE);
             }
         }
 
         // Generate QR code data for each ticket after they get IDs
         List<Ticket> savedTickets = ticketRepository.saveAll(ticketsToCreate);
-        
+        log.info("[Ticket] Đã lưu {} vé vào DB cho order {}", savedTickets.size(), orderId);
+
         // Update QR code data with ticket info
         savedTickets.forEach(ticket -> {
             ticket.setQrCodeData(generateQrCodeData(ticket));
+            log.debug("[Ticket] Set QR cho ticketId={}, orderItemId={}", ticket.getId(), ticket.getOrderItemId());
         });
-        
+
         List<Ticket> ticketsWithQr = ticketRepository.saveAll(savedTickets);
-        log.info("Created {} tickets for order {}", ticketsWithQr.size(), orderId);
+        log.info("[Ticket] Hoàn tất tạo {} vé cho order {}", ticketsWithQr.size(), orderId);
         return ticketsWithQr;
     }
     
