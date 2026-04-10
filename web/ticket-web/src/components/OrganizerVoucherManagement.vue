@@ -3,8 +3,10 @@
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h2 class="text-2xl font-black text-white">Voucher Management</h2>
-        <p class="text-zinc-400 text-sm mt-1">Create and manage vouchers for your events</p>
+        <h2 class="text-2xl font-black text-white">{{ isFixedEventMode ? 'Event Vouchers' : 'Voucher Management' }}</h2>
+        <p class="text-zinc-400 text-sm mt-1">
+          {{ isFixedEventMode ? 'Create and manage vouchers for this event' : 'Create and manage vouchers for your events' }}
+        </p>
       </div>
       <button
         @click="showCreateForm = !showCreateForm"
@@ -20,7 +22,7 @@
       
       <form @submit.prevent="handleCreateVoucher" class="space-y-4">
         <!-- Event Selection -->
-        <div>
+        <div v-if="!isFixedEventMode">
           <label class="block text-sm font-medium text-zinc-300 mb-1">Select Event *</label>
           <select
             v-model="formData.eventId"
@@ -178,15 +180,15 @@
 
     <!-- Vouchers List -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-      <h3 class="text-lg font-semibold text-white mb-4">My Vouchers</h3>
+      <h3 class="text-lg font-semibold text-white mb-4">{{ isFixedEventMode ? 'Vouchers For This Event' : 'My Vouchers' }}</h3>
       
       <!-- Loading State -->
-      <div v-if="loading && organizerVouchers.length === 0" class="flex justify-center py-8">
+      <div v-if="loading && displayedVouchers.length === 0" class="flex justify-center py-8">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500"></div>
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="organizerVouchers.length === 0" class="text-center py-8">
+      <div v-else-if="displayedVouchers.length === 0" class="text-center py-8">
         <p class="text-zinc-400">No vouchers created yet</p>
         <p class="text-zinc-500 text-sm">Create your first voucher to get started</p>
       </div>
@@ -194,7 +196,7 @@
       <!-- Vouchers Grid -->
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div
-          v-for="voucher in organizerVouchers"
+          v-for="voucher in displayedVouchers"
           :key="voucher.id"
           class="border border-zinc-800 bg-zinc-950/70 rounded-xl p-4 hover:border-violet-500/40 transition"
         >
@@ -288,6 +290,13 @@ import { useVoucherStore } from '@/stores/voucher.store'
 import { useOrganizerStore } from '@/stores/organizer.store'
 import { useAuthStore } from '@/stores/auth.store'
 
+const props = defineProps({
+  fixedEventId: {
+    type: [String, Number],
+    default: null,
+  },
+})
+
 const voucherStore = useVoucherStore()
 const organizerStore = useOrganizerStore()
 const authStore = useAuthStore()
@@ -296,6 +305,17 @@ const showCreateForm = ref(false)
 const formError = ref(null)
 const loading = computed(() => voucherStore.loading)
 const organizerVouchers = computed(() => voucherStore.organizerVouchers)
+const isFixedEventMode = computed(() => {
+  const value = props.fixedEventId
+  return value != null && String(value).trim() !== ''
+})
+const normalizedFixedEventId = computed(() => String(props.fixedEventId ?? '').trim())
+const displayedVouchers = computed(() => {
+  if (!isFixedEventMode.value) return organizerVouchers.value
+  return organizerVouchers.value.filter((voucher) =>
+    String(voucher?.eventId ?? '').trim() === normalizedFixedEventId.value
+  )
+})
 
 const formData = ref({
   eventId: '',
@@ -314,7 +334,7 @@ const publishedEvents = computed(() => {
   const source = Array.isArray(organizerStore.myEvents) ? organizerStore.myEvents : []
   return source.filter((eventItem) => {
     const status = String(eventItem?.status || '').toLowerCase()
-    return status === 'published' || status === 'approved'
+    return status === 'published'
   })
 })
 
@@ -368,6 +388,12 @@ async function handleCreateVoucher() {
 
   // Validation
   if (!formData.value.eventId) {
+    if (isFixedEventMode.value) {
+      formData.value.eventId = normalizedFixedEventId.value
+    }
+  }
+
+  if (!isFixedEventMode.value && !formData.value.eventId) {
     formError.value = 'Please select an event'
     return
   }
@@ -411,10 +437,11 @@ async function handleCreateVoucher() {
   }
 
   try {
-    const selectedEventId = Number(formData.value.eventId)
+    const rawEventId = isFixedEventMode.value ? normalizedFixedEventId.value : formData.value.eventId
+    const selectedEventId = Number(rawEventId)
     const eventIdPayload = Number.isFinite(selectedEventId) && selectedEventId > 0
       ? selectedEventId
-      : formData.value.eventId
+      : rawEventId
 
     const normalizedMinOrderValue = Number(formData.value.minOrderValue)
     const hasMinOrderValue = Number.isFinite(normalizedMinOrderValue) && normalizedMinOrderValue > 0
@@ -482,7 +509,7 @@ onMounted(async () => {
     await voucherStore.fetchOrganizerVouchers()
 
     // Fetch organizer events for voucher event picker
-    if (!organizerStore.myEvents.length && authStore.user?.id) {
+    if (!isFixedEventMode.value && !organizerStore.myEvents.length && authStore.user?.id) {
       await organizerStore.fetchMyEvents(authStore.user.id)
     }
   } catch (err) {

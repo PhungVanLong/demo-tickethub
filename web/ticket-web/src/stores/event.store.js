@@ -13,12 +13,25 @@ function debugLog(step, payload = {}) {
 
 // ── Field normalisers (adapter between backend and frontend field names) ───────
 export function normalizeTicketTier(t) {
+    const normalizedId = t.ticketTierId ?? t.tierId ?? t.id ?? t.ticketTypeId ?? t.code ?? null
+    const availableRaw = t.quantityAvailable
+        ?? t.available
+        ?? t.availableCount
+        ?? t.remainingCount
+        ?? t.remaining
+        ?? t.stock
+        ?? t.quantityRemain
+        ?? t.quantityLeft
+        ?? t.quantityTotal
+        ?? 9999
+    const maxPerOrderRaw = t.maxPerOrder ?? t.maxPerUser ?? t.maxPurchasePerOrder ?? t.limitPerOrder ?? 4
+
     return {
-        id: t.ticketTierId ?? t.id,          // CheckoutTierResponse uses ticketTierId
+        id: normalizedId,          // CheckoutTierResponse may expose different id fields
         name: t.name || t.tierName,
         price: Number(t.price ?? 0),
-        available: t.quantityAvailable ?? t.available ?? t.availableCount ?? t.remainingCount ?? 9999,
-        maxPerOrder: t.maxPerOrder || 4,
+        available: Math.max(0, Number(availableRaw) || 0),
+        maxPerOrder: Math.max(1, Number(maxPerOrderRaw) || 4),
         tierType: t.tierType || 'GENERAL',
         colorCode: t.colorCode || null,
     }

@@ -16,50 +16,53 @@
       <!-- Tabs -->
       <div v-else class="space-y-8">
         <!-- Tab Navigation -->
-        <div class="flex gap-2 border-b border-zinc-800 overflow-x-auto">
-          <button
-            @click="activeTab = 'active'"
-            :class="[
-              'px-4 py-2 text-sm whitespace-nowrap font-semibold border-b-2 transition',
-              activeTab === 'active'
-                ? 'text-violet-300 border-violet-500'
-                : 'text-zinc-400 border-transparent hover:text-zinc-200'
-            ]"
-          >
-            Active Vouchers
-            <span class="ml-2 bg-violet-500/15 text-violet-300 text-xs font-bold px-2 py-1 rounded-full border border-violet-500/30">
-              {{ activeVouchers.length }}
-            </span>
-          </button>
-          
-          <button
-            @click="activeTab = 'expiring'"
-            :class="[
-              'px-4 py-2 text-sm whitespace-nowrap font-semibold border-b-2 transition',
-              activeTab === 'expiring'
-                ? 'text-violet-300 border-violet-500'
-                : 'text-zinc-400 border-transparent hover:text-zinc-200'
-            ]"
-          >
-            Expiring Soon
-            <span v-if="expiringSoon.length > 0" class="ml-2 bg-red-500/10 text-red-300 text-xs font-bold px-2 py-1 rounded-full border border-red-500/30">
-              {{ expiringSoon.length }}
-            </span>
-          </button>
-          
-          <button
-            @click="activeTab = 'all'"
-            :class="[
-              'px-4 py-2 text-sm whitespace-nowrap font-semibold border-b-2 transition',
-              activeTab === 'all'
-                ? 'text-violet-300 border-violet-500'
-                : 'text-zinc-400 border-transparent hover:text-zinc-200'
-            ]"
-          >
-            All Vouchers
-            <span class="ml-2 bg-zinc-800 text-zinc-300 text-xs font-bold px-2 py-1 rounded-full border border-zinc-700">
-              {{ myVouchers.length }}
-            </span>
+        <div class="flex items-center gap-2 border-b border-zinc-800 overflow-x-auto pb-2">
+          <div class="flex gap-2">
+            <button
+              @click="activeTab = 'active'"
+              :class="[
+                'px-4 py-2 text-sm whitespace-nowrap font-semibold border-b-2 transition',
+                activeTab === 'active'
+                  ? 'text-violet-300 border-violet-500'
+                  : 'text-zinc-400 border-transparent hover:text-zinc-200'
+              ]"
+            >
+              Active Vouchers
+              <span class="ml-2 bg-violet-500/15 text-violet-300 text-xs font-bold px-2 py-1 rounded-full border border-violet-500/30">
+                {{ activeVouchers.length }}
+              </span>
+            </button>
+            <button
+              @click="activeTab = 'expiring'"
+              :class="[
+                'px-4 py-2 text-sm whitespace-nowrap font-semibold border-b-2 transition',
+                activeTab === 'expiring'
+                  ? 'text-violet-300 border-violet-500'
+                  : 'text-zinc-400 border-transparent hover:text-zinc-200'
+              ]"
+            >
+              Expiring Soon
+              <span v-if="expiringSoon.length > 0" class="ml-2 bg-red-500/10 text-red-300 text-xs font-bold px-2 py-1 rounded-full border border-red-500/30">
+                {{ expiringSoon.length }}
+              </span>
+            </button>
+            <button
+              @click="activeTab = 'all'"
+              :class="[
+                'px-4 py-2 text-sm whitespace-nowrap font-semibold border-b-2 transition',
+                activeTab === 'all'
+                  ? 'text-violet-300 border-violet-500'
+                  : 'text-zinc-400 border-transparent hover:text-zinc-200'
+              ]"
+            >
+              All Vouchers
+              <span class="ml-2 bg-zinc-800 text-zinc-300 text-xs font-bold px-2 py-1 rounded-full border border-zinc-700">
+                {{ allVouchers.length }}
+              </span>
+            </button>
+          </div>
+          <button class="ml-auto btn-primary" @click="createVoucher">
+            Tạo voucher
           </button>
         </div>
 
@@ -125,6 +128,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+
 import { useVoucherStore } from '@/stores/voucher.store'
 import VoucherCard from '@/components/VoucherCard.vue'
 
@@ -132,13 +136,42 @@ const voucherStore = useVoucherStore()
 const activeTab = ref('active')
 
 const myVouchers = computed(() => voucherStore.myVouchers)
-const activeVouchers = computed(() => voucherStore.activeVouchers)
-const expiringSoon = computed(() => voucherStore.expiringSoon)
+const platformSaleVouchers = computed(() => voucherStore.platformSaleVouchers)
+const allVouchers = computed(() => {
+  // Gộp voucher cá nhân và voucher platform sale, loại trùng theo id/code
+  const ids = new Set()
+  const merged = []
+  for (const v of myVouchers.value) {
+    if (v && (v.id || v.code)) {
+      ids.add(String(v.id || v.code))
+      merged.push(v)
+    }
+  }
+  for (const v of platformSaleVouchers.value) {
+    if (v && (v.id || v.code)) {
+      const key = String(v.id || v.code)
+      if (!ids.has(key)) {
+        ids.add(key)
+        merged.push(v)
+      }
+    }
+  }
+  return merged
+})
+const activeVouchers = computed(() => allVouchers.value.filter(v => v.isActive && new Date(v.validUntil) > new Date()))
+const expiringSoon = computed(() => activeVouchers.value.filter(v => {
+  const expiryDate = new Date(v.validUntil)
+  const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+  return expiryDate <= threeDaysFromNow
+}))
 const loading = computed(() => voucherStore.loading)
 
 onMounted(async () => {
   try {
-    await voucherStore.fetchMyVouchers()
+    await Promise.all([
+      voucherStore.fetchMyVouchers(),
+      voucherStore.fetchPlatformSaleVouchers()
+    ])
   } catch (err) {
     console.error('Failed to load vouchers:', err)
   }

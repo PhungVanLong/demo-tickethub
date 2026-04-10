@@ -65,6 +65,7 @@ export function getTokenUser(token) {
         email: payload.email,
         role: payload.role || payload.roles?.[0] || 'CUSTOMER',
         name: payload.name || payload.fullName || 'Unknown',
+        avatar: payload.picture || payload.avatarUrl || payload.avatar || payload.imageUrl || null,
         iat: payload.iat, // issued at
         exp: payload.exp, // expiration
     }

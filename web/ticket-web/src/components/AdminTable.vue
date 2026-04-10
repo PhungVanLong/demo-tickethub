@@ -16,7 +16,7 @@
       <tbody class="divide-y divide-zinc-800/60">
         <tr
           v-for="(row, idx) in rows"
-          :key="idx"
+          :key="getRowKey(row, idx)"
           class="bg-zinc-950 hover:bg-zinc-900/70 transition-colors duration-150 group"
         >
           <td
@@ -87,6 +87,25 @@ const props = defineProps({
 })
 
 defineEmits(['page'])
+
+function getRowKey(row, idx) {
+  const candidates = [
+    row?.id,
+    row?.orderId,
+    row?.eventId,
+    row?.paymentId,
+    row?.paymentCode,
+    row?.email,
+  ]
+
+  for (const value of candidates) {
+    if (value != null && String(value).trim()) {
+      return String(value)
+    }
+  }
+
+  return `row-${idx}`
+}
 
 const totalPages = computed(() => Math.ceil(props.totalRows / props.pageSize))
 

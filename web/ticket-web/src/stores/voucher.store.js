@@ -26,6 +26,19 @@ export const useVoucherStore = defineStore('voucher', () => {
   const eventVouchers = ref({}) // { eventId: [vouchers] }
   const loading = ref(false)
   const error = ref(null)
+  const platformSaleVouchers = ref([])
+  // Lấy voucher platform sale đang active
+  async function fetchPlatformSaleVouchers() {
+    try {
+      const response = await voucherService.getActivePlatformSaleVouchers()
+      platformSaleVouchers.value = Array.isArray(response) ? response : []
+      return platformSaleVouchers.value
+    } catch (err) {
+      console.error('Failed to fetch platform sale vouchers:', err)
+      platformSaleVouchers.value = []
+      throw err
+    }
+  }
 
   // Computed
   const monthlyVouchers = computed(() =>
@@ -116,6 +129,21 @@ export const useVoucherStore = defineStore('voucher', () => {
     }
   }
 
+  async function createPlatformVoucher(payload) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await voucherService.createPlatformVoucher(payload)
+      return unwrapVoucherPayload(response)
+    } catch (err) {
+      error.value = extractApiError(err, 'Failed to create platform voucher').message
+      console.error('Failed to create platform voucher:', err)
+      throw new Error(error.value)
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function deleteEventVoucher(voucherId) {
     loading.value = true
     error.value = null
@@ -149,9 +177,9 @@ export const useVoucherStore = defineStore('voucher', () => {
     }
   }
 
-  async function validateVoucher(code) {
+  async function validateVoucher(code, context = {}) {
     try {
-      const response = await voucherService.validateVoucher(code)
+      const response = await voucherService.validateVoucher(code, context)
       return unwrapVoucherPayload(response)
     } catch (err) {
       console.error('Failed to validate voucher:', err)
@@ -164,6 +192,7 @@ export const useVoucherStore = defineStore('voucher', () => {
     myVouchers,
     organizerVouchers,
     eventVouchers,
+    platformSaleVouchers,
     loading,
     error,
 
@@ -176,7 +205,9 @@ export const useVoucherStore = defineStore('voucher', () => {
     fetchMyVouchers,
     fetchOrganizerVouchers,
     fetchEventVouchers,
+    fetchPlatformSaleVouchers,
     createEventVoucher,
+    createPlatformVoucher,
     deleteEventVoucher,
     updateEventVoucher,
     validateVoucher

@@ -66,7 +66,7 @@
         >
           <template #cell-title="{ row }">
             <div class="flex items-center gap-3">
-              <img :src="row.image" :alt="row.title" class="w-10 h-10 rounded-lg object-cover shrink-0" />
+              <img :src="resolveEventImage(row)" :alt="row.title" class="w-10 h-10 rounded-lg object-cover shrink-0" />
               <div class="min-w-0">
                 <p class="font-semibold text-white text-sm truncate max-w-[200px]">{{ row.title }}</p>
                 <p class="text-xs text-zinc-500">{{ row.category }}</p>
@@ -84,10 +84,10 @@
               <div class="flex-1 h-1.5 bg-zinc-800 rounded-full w-16 overflow-hidden">
                 <div
                   class="h-full rounded-full bg-violet-600"
-                  :style="{ width: `${Math.round((row.sold / row.capacity) * 100)}%` }"
+                  :style="{ width: `${soldPercent(row)}%` }"
                 />
               </div>
-              <span class="text-xs text-zinc-400 tabular-nums">{{ Math.round((row.sold / row.capacity) * 100) }}%</span>
+              <span class="text-xs text-zinc-400 tabular-nums">{{ soldPercent(row) }}%</span>
             </div>
           </template>
           <template #cell-status="{ row }">
@@ -247,6 +247,8 @@
       </div>
       <!-- TAB: Revenue -->
       <div v-else-if="activeTab === 'revenue'" class="space-y-6 animate-fade-in">
+        <AdminPlatformVoucherManagement />
+
         <!-- Date filters -->
         <div class="flex flex-col sm:flex-row gap-3 items-end">
           <div>
@@ -481,9 +483,11 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import AdminTable from '@/components/AdminTable.vue'
 import PlatformSalesManagement from '@/components/PlatformSalesManagement.vue'
+import AdminPlatformVoucherManagement from '@/components/AdminPlatformVoucherManagement.vue'
 import { useAdminStore } from '@/stores/admin.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { categories }    from '@/data/events'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 const adminStore = useAdminStore()
 const auth = useAuthStore()
@@ -630,7 +634,10 @@ const orderColumns = [
 
 const filteredAdminEvents = computed(() => {
   let list = adminStore.allEvents
-  if (eventStatusFilter.value !== 'all') list = list.filter((e) => e.status === eventStatusFilter.value)
+  if (eventStatusFilter.value !== 'all') {
+    const targetStatus = String(eventStatusFilter.value || '').toLowerCase()
+    list = list.filter((e) => String(e.status || '').toLowerCase() === targetStatus)
+  }
   if (eventSearch.value.trim()) {
     const q = eventSearch.value.toLowerCase()
     list = list.filter((e) =>
@@ -751,11 +758,51 @@ async function saveEvent() {
   if (editingEvent.value) {
     await adminStore.updateEvent(editingEvent.value.id, { ...eventForm })
   } else {
-    await adminStore.createEvent({ ...eventForm, status: 'pending' })
+    const startTime = toStartTime(eventForm.date, eventForm.time)
+    const endTime = toEndTime(startTime)
+    const defaultPrice = Number(eventForm.price)
+    const defaultTierQuantity = Number(eventForm.capacity)
+
+    await adminStore.createEvent({
+      title: String(eventForm.title || '').trim(),
+      category: eventForm.category,
+      description: eventForm.description,
+      venue: eventForm.venue,
+      city: eventForm.city,
+      country: 'Vietnam',
+      startTime,
+      endTime,
+      bannerUrl: eventForm.image || null,
+      imageUrl: eventForm.image || null,
+      defaultPrice: Number.isFinite(defaultPrice) && defaultPrice > 0 ? defaultPrice : undefined,
+      defaultTierQuantity: Number.isFinite(defaultTierQuantity) && defaultTierQuantity > 0 ? defaultTierQuantity : undefined,
+    })
   }
   showCreateModal.value = false
   editingEvent.value    = null
   Object.assign(eventForm, { title: '', category: '', date: '', time: '', price: 0, venue: '', city: '', capacity: 0, description: '', image: '' })
+}
+
+function toStartTime(date, time) {
+  const d = String(date || '').trim()
+  const t = String(time || '').trim()
+  if (!d) return ''
+  const normalizedTime = t || '00:00'
+  return `${d}T${normalizedTime}:00`
+}
+
+function toEndTime(startTime) {
+  if (!startTime) return ''
+  const parsed = new Date(startTime)
+  if (Number.isNaN(parsed.getTime())) return startTime
+  parsed.setHours(parsed.getHours() + 3)
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  const hour = String(parsed.getHours()).padStart(2, '0')
+  const minute = String(parsed.getMinutes()).padStart(2, '0')
+  const second = String(parsed.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}`
 }
 
 // ─── User Management (JWT-protected) ─────────────────────────────────────
@@ -790,6 +837,18 @@ function formatDateTime(d) {
 function formatPrice(val) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val ?? 0)
 }
+
+function soldPercent(row) {
+  const sold = Number(row?.sold ?? 0)
+  const capacity = Number(row?.capacity ?? 0)
+  if (!Number.isFinite(sold) || !Number.isFinite(capacity) || capacity <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((sold / capacity) * 100)))
+}
+
+function resolveEventImage(row) {
+  return resolveMediaUrl(row?.image || row?.banner) || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=200&q=80'
+}
+
 function orderBadge(status) {
   const key = String(status || '').toLowerCase()
   return { confirmed: 'badge-green', pending: 'badge-yellow', cancelled: 'badge-red', refunded: 'badge-blue' }[key] ?? 'badge-blue'

@@ -72,16 +72,28 @@
           {{ booking.error }}
         </div>
 
-        <div v-if="displayOrders.length === 0" class="text-center py-20">
+        <div class="inline-flex items-center gap-1 bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
+          <button
+            v-for="phase in ticketPhases"
+            :key="phase.id"
+            class="px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors"
+            :class="selectedTicketPhase === phase.id ? phase.activeClass : 'text-zinc-400 hover:text-white'"
+            @click="selectedTicketPhase = phase.id"
+          >
+            {{ phase.label }}
+          </button>
+        </div>
+
+        <div v-if="filteredDisplayOrders.length === 0" class="text-center py-20">
           <svg class="w-16 h-16 mx-auto text-zinc-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path d="M20 12v10H4V12M22 7H2v5h20V7zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
           </svg>
-          <p class="text-zinc-400 text-lg font-semibold">No tickets yet</p>
+          <p class="text-zinc-400 text-lg font-semibold">No {{ selectedTicketPhase }} tickets</p>
           <RouterLink to="/" class="btn-primary mt-4">Browse Events</RouterLink>
         </div>
 
         <div
-          v-for="order in displayOrders"
+          v-for="order in filteredDisplayOrders"
           :key="order.id"
           class="card p-5 sm:p-6 hover:border-zinc-700 transition-all duration-200"
         >
@@ -337,6 +349,19 @@ onMounted(() => booking.fetchMyTickets())
 const orders = computed(() => booking.myOrders)
 const myTickets = computed(() => booking.myTickets)
 const fallbackEventImage = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80'
+const selectedTicketPhase = ref('active')
+const ticketPhases = [
+  { id: 'active', label: 'Active', activeClass: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
+  { id: 'used', label: 'Used', activeClass: 'bg-zinc-700 text-zinc-200 border border-zinc-600' },
+  { id: 'cancelled', label: 'Cancelled', activeClass: 'bg-red-500/20 text-red-300 border border-red-500/30' },
+]
+
+function normalizeTicketPhase(status) {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'used') return 'used'
+  if (normalized === 'cancelled' || normalized === 'refunded') return 'cancelled'
+  return 'active'
+}
 
 const displayOrders = computed(() => {
   const toTime = (value) => {
@@ -348,9 +373,7 @@ const displayOrders = computed(() => {
   if (myTickets.value.length) {
     const mapped = myTickets.value.map((ticket) => {
       const derivedOrderCode = String(ticket.orderId || ticket.orderItemId || ticket.ticketCode || ticket.id)
-      const normalizedStatus = ticket.status === 'cancelled'
-        ? 'cancelled'
-        : (ticket.status === 'used' ? 'confirmed' : 'confirmed')
+      const normalizedStatus = normalizeTicketPhase(ticket.status)
 
       return {
         orderId: ticket.orderId || ticket.id,
@@ -376,6 +399,10 @@ const displayOrders = computed(() => {
 
   return [...orders.value].sort((a, b) => toTime(b.bookedAt || b.eventDate) - toTime(a.bookedAt || a.eventDate))
 })
+
+const filteredDisplayOrders = computed(() =>
+  displayOrders.value.filter((order) => normalizeTicketPhase(order.status) === selectedTicketPhase.value)
+)
 
 const totalOwnedTickets = computed(() => {
   if (myTickets.value.length) return myTickets.value.length
@@ -466,14 +493,14 @@ async function downloadTicket(ticket) {
 }
 
 function statusBadge(status) {
-  if (status === 'confirmed') return 'badge-green'
-  if (status === 'pending')   return 'badge-yellow'
-  if (status === 'cancelled') return 'badge-red'
-  if (status === 'refunded')  return 'badge-blue'
+  const phase = normalizeTicketPhase(status)
+  if (phase === 'used') return 'bg-zinc-700 text-zinc-200 border border-zinc-600 rounded-lg px-2 py-0.5 text-xs font-semibold'
+  if (phase === 'cancelled') return 'badge-red'
   return 'badge-blue'
 }
 function statusLabel(status) {
-  return { confirmed: 'Confirmed', pending: 'Pending', cancelled: 'Cancelled', refunded: 'Refunded' }[status] ?? status
+  const phase = normalizeTicketPhase(status)
+  return { active: 'Active', used: 'Used', cancelled: 'Cancelled' }[phase] ?? phase
 }
 
 function ticketStatusBadge(status) {

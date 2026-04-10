@@ -73,6 +73,78 @@ function normalizeUser(u) {
     }
 }
 
+function toEventKey(eventItem) {
+    const id = eventItem?.id
+    if (id != null && String(id).trim()) return String(id)
+
+    const slug = String(eventItem?.slug || '').trim()
+    if (slug) return `slug:${slug}`
+
+    const title = String(eventItem?.title || '').trim().toLowerCase()
+    const date = String(eventItem?.date || '').trim()
+    return `fallback:${title}:${date}`
+}
+
+function adminEventCompletenessScore(eventItem) {
+    return [
+        eventItem?.title,
+        eventItem?.category,
+        eventItem?.date,
+        eventItem?.venue,
+        eventItem?.city,
+        eventItem?.image,
+        Number(eventItem?.price || 0) > 0,
+        Number(eventItem?.capacity || 0) > 0,
+        Number(eventItem?.sold || 0) > 0,
+    ].filter(Boolean).length
+}
+
+function normalizeAdminEvent(raw) {
+    const normalized = normalizeEvent(raw)
+    return {
+        ...normalized,
+        title: normalized.title || raw?.name || 'Untitled Event',
+        category: normalized.category || raw?.type || 'General',
+        price: toMoneyNumber(normalized.price),
+        sold: toMoneyNumber(normalized.sold),
+        capacity: toMoneyNumber(normalized.capacity),
+        image: normalized.image || normalized.banner || '',
+        status: String(normalized.status || raw?.status || 'pending').toLowerCase(),
+    }
+}
+
+function dedupeEvents(list) {
+    const byKey = new Map()
+
+    list.forEach((item) => {
+        const normalized = normalizeAdminEvent(item)
+        const key = toEventKey(normalized)
+        const existing = byKey.get(key)
+
+        if (!existing) {
+            byKey.set(key, normalized)
+            return
+        }
+
+        const keepCurrent = adminEventCompletenessScore(normalized) >= adminEventCompletenessScore(existing)
+        if (keepCurrent) {
+            byKey.set(key, {
+                ...existing,
+                ...normalized,
+                // Keep non-empty preferred fields when one source is partial.
+                image: normalized.image || existing.image,
+                banner: normalized.banner || existing.banner,
+                title: normalized.title || existing.title,
+                category: normalized.category || existing.category,
+                venue: normalized.venue || existing.venue,
+                city: normalized.city || existing.city,
+            })
+        }
+    })
+
+    return Array.from(byKey.values())
+}
+
 export const useAdminStore = defineStore('admin', () => {
     const pendingEvents = ref([])
     const allEvents = ref([])
@@ -112,7 +184,7 @@ export const useAdminStore = defineStore('admin', () => {
         try {
             const data = await adminService.getPendingEvents()
             const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? data)
-            pendingEvents.value = Array.isArray(raw) ? raw.map(normalizeEvent) : []
+            pendingEvents.value = Array.isArray(raw) ? dedupeEvents(raw) : []
         } catch (e) {
             error.value = e.response?.data?.message || 'Failed to load pending events'
             pendingEvents.value = []
@@ -124,16 +196,22 @@ export const useAdminStore = defineStore('admin', () => {
     async function fetchAllEvents() {
         loading.value = true
         try {
-            const data = await eventService.getPublished({ size: 200 })
+            const data = await adminService.getAllEvents({ size: 200 })
             const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? data)
-            allEvents.value = Array.isArray(raw) ? raw.map(normalizeEvent) : []
-            for (const pending of pendingEvents.value) {
-                if (!allEvents.value.find((e) => e.id === pending.id)) {
-                    allEvents.value.unshift(pending)
-                }
-            }
+            const adminEvents = Array.isArray(raw) ? raw : []
+            allEvents.value = dedupeEvents([...adminEvents, ...pendingEvents.value])
         } catch {
-            allEvents.value = []
+            // Backward-compatible fallback in case admin endpoint is unavailable.
+            try {
+                const publishedData = await eventService.getPublished({ size: 200 })
+                const publishedRaw = Array.isArray(publishedData)
+                    ? publishedData
+                    : (publishedData.content ?? publishedData.data ?? publishedData)
+                const published = Array.isArray(publishedRaw) ? publishedRaw : []
+                allEvents.value = dedupeEvents([...published, ...pendingEvents.value])
+            } catch {
+                allEvents.value = []
+            }
         } finally {
             loading.value = false
         }
@@ -331,8 +409,8 @@ export const useAdminStore = defineStore('admin', () => {
         error.value = null
         try {
             const created = await eventService.create(data)
-            const norm = normalizeEvent(created.data ?? created)
-            allEvents.value.unshift(norm)
+            const norm = normalizeAdminEvent(created.data ?? created)
+            allEvents.value = dedupeEvents([norm, ...allEvents.value])
             return norm
         } catch (e) {
             error.value = e.response?.data?.message || 'Failed to create event'
@@ -347,9 +425,12 @@ export const useAdminStore = defineStore('admin', () => {
         error.value = null
         try {
             const updated = await eventService.update(id, data)
-            const norm = normalizeEvent(updated.data ?? updated)
+            const norm = normalizeAdminEvent(updated.data ?? updated)
             const idx = allEvents.value.findIndex((e) => e.id === id)
-            if (idx !== -1) allEvents.value[idx] = norm
+            if (idx !== -1) {
+                allEvents.value[idx] = norm
+                allEvents.value = dedupeEvents(allEvents.value)
+            }
             return norm
         } catch (e) {
             error.value = e.response?.data?.message || 'Failed to update event'

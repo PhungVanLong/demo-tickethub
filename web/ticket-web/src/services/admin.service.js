@@ -3,6 +3,11 @@ import api from './api'
 
 export const adminService = {
     // ── Events ──────────────────────────────────────────────────────────────
+    async getAllEvents(params = {}) {
+        const res = await api.get('/api/events', { params })
+        return res.data
+    },
+
     async getPendingEvents() {
         const res = await api.get('/api/events/pending')
         return res.data

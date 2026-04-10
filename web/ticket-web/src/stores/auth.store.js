@@ -15,11 +15,20 @@ import {
 // ── Field normaliser ──────────────────────────────────────────────────────────
 function normalizeUser(u) {
     if (!u) return null
+
+    const avatarUrl =
+        u.avatar ||
+        u.avatarUrl ||
+        u.picture ||
+        u.photoUrl ||
+        u.profileImageUrl ||
+        u.imageUrl
+
     return {
         id: u.id || u.userId,
         name: u.name || u.fullName || u.username || u.email,
         email: u.email,
-        avatar: u.avatar || u.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.email)}`,
+        avatar: avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.email)}`,
         role: (u.role || 'CUSTOMER').toUpperCase(),
         joinedAt: u.joinedAt || u.createdAt,
     }
@@ -50,6 +59,35 @@ export const useAuthStore = defineStore('auth', () => {
         return userRoleValid && tokenRoleValid
     })
 
+    function applyAuthPayload(data) {
+        const { accessToken, refreshToken: newRefreshToken } = extractTokens(data)
+        const rawUser = data.user ? { ...data, ...data.user } : data
+
+        if (!accessToken) throw new Error('No token received from server')
+
+        // Verify JWT token structure and claims.
+        const verification = verifyToken(accessToken)
+        if (!verification.valid) {
+            throw new Error(`Invalid JWT token: ${verification.error}`)
+        }
+
+        token.value = accessToken
+        localStorage.setItem('auth_token', accessToken)
+
+        if (newRefreshToken) {
+            refreshToken.value = newRefreshToken
+            localStorage.setItem('refresh_token', newRefreshToken)
+        }
+
+        const tokenUser = getTokenUser(accessToken)
+        user.value = normalizeUser({
+            ...rawUser,
+            role: tokenUser?.role,
+            avatar: rawUser?.avatar || rawUser?.avatarUrl || tokenUser?.avatar,
+        })
+        tokenValidated.value = true
+    }
+
     // ── Actions ────────────────────────────────────────────────────────────────
     async function login(email, password) {
         loading.value = true
@@ -57,30 +95,7 @@ export const useAuthStore = defineStore('auth', () => {
         logAction('AUTH_LOGIN_START', { email })
         try {
             const data = await authService.login(email, password)
-            const { accessToken, refreshToken: newRefreshToken } = extractTokens(data)
-            const rawUser = data.user ? { ...data, ...data.user } : data
-
-            if (!accessToken) throw new Error('No token received from server')
-
-            // Verify JWT token
-            const verification = verifyToken(accessToken)
-            if (!verification.valid) {
-                throw new Error(`Invalid JWT token: ${verification.error}`)
-            }
-
-            // Store tokens
-            token.value = accessToken
-            localStorage.setItem('auth_token', accessToken)
-
-            if (newRefreshToken) {
-                refreshToken.value = newRefreshToken
-                localStorage.setItem('refresh_token', newRefreshToken)
-            }
-
-            // Extract user info from JWT payload (most reliable source)
-            const tokenUser = getTokenUser(accessToken)
-            user.value = normalizeUser({ ...rawUser, role: tokenUser?.role })
-            tokenValidated.value = true
+            applyAuthPayload(data)
 
             logAction('AUTH_LOGIN_SUCCESS', { userId: user.value?.id, role: user.value?.role })
             return true
@@ -88,6 +103,25 @@ export const useAuthStore = defineStore('auth', () => {
             const parsed = extractApiError(e, 'Login failed')
             error.value = parsed.message
             logAction('AUTH_LOGIN_FAILED', { message: error.value })
+            return false
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function loginWithGoogleIdToken(idToken) {
+        loading.value = true
+        error.value = null
+        logAction('AUTH_GOOGLE_LOGIN_START', {})
+        try {
+            const data = await authService.loginWithGoogle(idToken)
+            applyAuthPayload(data)
+            logAction('AUTH_GOOGLE_LOGIN_SUCCESS', { userId: user.value?.id, role: user.value?.role })
+            return true
+        } catch (e) {
+            const parsed = extractApiError(e, 'Google sign-in failed')
+            error.value = parsed.message
+            logAction('AUTH_GOOGLE_LOGIN_FAILED', { message: error.value })
             return false
         } finally {
             loading.value = false
@@ -262,7 +296,7 @@ export const useAuthStore = defineStore('auth', () => {
     return {
         user, token, refreshToken, loading, error, tokenValidated,
         isLoggedIn, isAdmin, isOrganizer,
-        login, register, fetchMe, updateProfile, logout, switchRole,
+        login, loginWithGoogleIdToken, register, fetchMe, updateProfile, logout, switchRole,
         validateToken, refreshAccessToken,
     }
 })

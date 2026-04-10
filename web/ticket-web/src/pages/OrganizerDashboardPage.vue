@@ -119,6 +119,15 @@
                       Edit
                     </RouterLink>
                     <button
+                      v-if="isPublishedEvent(event)"
+                      class="btn-ghost py-1 px-2 text-xs"
+                      :class="{ 'opacity-50 pointer-events-none': !hasStrictOrganizerRole() }"
+                      @click="openStaffModal(event)"
+                    >
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                      Create Staff
+                    </button>
+                    <button
                       :disabled="!hasOrganizerRole()"
                       class="py-1 px-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       @click="confirmDelete(event)"
@@ -132,12 +141,6 @@
           </table>
         </div>
       </div>
-
-      <!-- Voucher Management Section -->
-      <div class="mt-16">
-        <OrganizerVoucherManagement />
-      </div>
-
       <!-- Delete confirm -->
       <Transition name="fade">
         <div
@@ -163,13 +166,73 @@
           </div>
         </div>
       </Transition>
+
+      <Transition name="fade">
+        <div
+          v-if="staffEvent"
+          class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          @click.self="closeStaffModal"
+        >
+          <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div class="mb-5">
+              <h3 class="text-lg font-bold text-white">Create Staff Account</h3>
+              <p class="text-zinc-500 text-sm mt-1">
+                Event: <span class="text-zinc-300">{{ staffEvent.title }}</span>
+              </p>
+            </div>
+
+            <div v-if="organizer.staffError" class="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+              {{ organizer.staffError }}
+            </div>
+            <div v-if="organizer.staffSuccess" class="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+              {{ organizer.staffSuccess }}
+            </div>
+
+            <form class="space-y-4" @submit.prevent="submitCreateStaff">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Full Name</label>
+                <input v-model="staffForm.fullName" type="text" class="input-field" placeholder="Gate Staff 01" required />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Email</label>
+                <input v-model="staffForm.email" type="email" class="input-field" placeholder="staff01@tickethub.com" required />
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Password</label>
+                  <input v-model="staffForm.password" type="password" class="input-field" placeholder="Staff@123456" required />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">Phone</label>
+                  <input v-model="staffForm.phone" type="tel" class="input-field" placeholder="+84901234567" required />
+                </div>
+              </div>
+
+              <div class="flex gap-3 pt-2">
+                <button type="button" class="btn-secondary flex-1 justify-center" @click="closeStaffModal">Cancel</button>
+                <button
+                  type="submit"
+                  class="btn-primary flex-1 justify-center"
+                  :class="organizer.staffLoading ? 'opacity-70 cursor-wait' : ''"
+                  :disabled="organizer.staffLoading"
+                >
+                  <svg v-if="organizer.staffLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  Create Staff
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import OrganizerVoucherManagement from '@/components/OrganizerVoucherManagement.vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { useAuthStore }      from '@/stores/auth.store'
 import { useOrganizerStore } from '@/stores/organizer.store'
 
@@ -178,10 +241,22 @@ const organizer = useOrganizerStore()
 
 const search      = ref('')
 const deleteTarget = ref(null)
+const staffEvent = ref(null)
+const staffForm = reactive({
+  email: '',
+  password: 'Staff@123456',
+  fullName: '',
+  phone: '',
+})
 
 // Helper to check if current user has ORGANIZER role from JWT
 function hasOrganizerRole() {
   return auth.isOrganizer && auth.tokenValidated
+}
+
+function hasStrictOrganizerRole() {
+  const role = String(auth.user?.role || '').toUpperCase()
+  return role === 'ORGANIZER' && auth.tokenValidated
 }
 
 // Helper to warn and prevent action if not authorized
@@ -233,6 +308,44 @@ async function doDelete() {
   if (!requireOrganizerRole('event deletion')) return
   await organizer.deleteMyEvent(deleteTarget.value.id)
   deleteTarget.value = null
+}
+
+function isPublishedEvent(event) {
+  return String(event?.status || '').toLowerCase() === 'published'
+}
+
+function openStaffModal(event) {
+  if (!hasStrictOrganizerRole()) {
+    console.warn('[Security] Unauthorized staff creation: requires ORGANIZER role')
+    return
+  }
+  staffEvent.value = event
+  organizer.staffError = null
+  organizer.staffSuccess = ''
+  staffForm.email = ''
+  staffForm.fullName = ''
+  staffForm.phone = ''
+  staffForm.password = 'Staff@123456'
+}
+
+function closeStaffModal() {
+  staffEvent.value = null
+}
+
+async function submitCreateStaff() {
+  if (!staffEvent.value) return
+
+  const payload = {
+    email: String(staffForm.email || '').trim(),
+    password: String(staffForm.password || '').trim(),
+    fullName: String(staffForm.fullName || '').trim(),
+    phone: String(staffForm.phone || '').trim(),
+  }
+
+  const created = await organizer.createEventStaff(staffEvent.value.id, payload)
+  if (created) {
+    closeStaffModal()
+  }
 }
 </script>
 

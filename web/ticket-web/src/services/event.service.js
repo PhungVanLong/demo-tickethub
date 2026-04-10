@@ -158,4 +158,10 @@ export const eventService = {
         const res = await api.get(`/api/events/${eventId}/stats/total-tickets`)
         return res.data
     },
+
+    /** POST /api/events/{eventId}/staff */
+    async createEventStaff(eventId, data) {
+        const res = await api.post(`/api/events/${eventId}/staff`, data)
+        return res.data
+    },
 }

@@ -4,10 +4,10 @@
 
     <div
       v-for="type in ticketTypes"
-      :key="type.id"
+      :key="type.id || type.name"
       class="card p-4 transition-all duration-200"
       :class="
-        getQty(type.id) > 0
+        getQty(getTypeId(type)) > 0
           ? 'border-violet-500/50 bg-violet-500/5'
           : 'hover:border-zinc-700'
       "
@@ -17,15 +17,18 @@
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <p class="font-semibold text-white text-sm">{{ type.name }}</p>
-            <span v-if="type.available <= 20" class="badge-red text-[10px]">
-              Only {{ type.available }} left!
+            <span v-if="typeAvailability(type) <= 20 && typeAvailability(type) > 0" class="badge-red text-[10px]">
+              Only {{ typeAvailability(type) }} left!
             </span>
-            <span v-else-if="type.available <= 100" class="badge-yellow text-[10px]">
+            <span v-else-if="typeAvailability(type) <= 100 && typeAvailability(type) > 20" class="badge-yellow text-[10px]">
               Limited
+            </span>
+            <span v-else-if="typeAvailability(type) <= 0" class="badge-red text-[10px]">
+              Sold out
             </span>
           </div>
           <p class="text-lg font-bold text-violet-400 mt-0.5">{{ formatPrice(type.price) }}</p>
-          <p class="text-xs text-zinc-500 mt-0.5">Max {{ type.maxPerOrder }} per order</p>
+          <p class="text-xs text-zinc-500 mt-0.5">Max {{ typeMaxPerOrder(type) }} per order</p>
         </div>
 
         <!-- Qty control -->
@@ -34,7 +37,7 @@
             class="w-9 h-9 rounded-full border border-zinc-700 flex items-center justify-center text-zinc-400
                    hover:border-zinc-500 hover:text-white active:scale-90
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-            :disabled="getQty(type.id) === 0"
+                 :disabled="getQty(getTypeId(type)) === 0"
             @click="decrement(type)"
             aria-label="Remove ticket"
           >
@@ -45,16 +48,16 @@
 
           <span
             class="w-8 text-center font-bold text-white text-base tabular-nums transition-all"
-            :class="getQty(type.id) > 0 ? 'text-violet-300' : ''"
+            :class="getQty(getTypeId(type)) > 0 ? 'text-violet-300' : ''"
           >
-            {{ getQty(type.id) }}
+            {{ getQty(getTypeId(type)) }}
           </span>
 
           <button
             class="w-9 h-9 rounded-full border border-zinc-700 flex items-center justify-center text-zinc-400
                    hover:border-violet-500 hover:text-violet-400 active:scale-90
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-            :disabled="getQty(type.id) >= type.maxPerOrder || getQty(type.id) >= type.available"
+                 :disabled="getQty(getTypeId(type)) >= typeMaxPerOrder(type) || getQty(getTypeId(type)) >= typeAvailability(type)"
             @click="increment(type)"
             aria-label="Add ticket"
           >
@@ -75,11 +78,11 @@
         leave-to-class="opacity-0 max-h-0"
       >
         <div
-          v-if="getQty(type.id) > 0"
+          v-if="getQty(getTypeId(type)) > 0"
           class="mt-3 pt-3 border-t border-violet-500/20 flex items-center justify-between overflow-hidden"
         >
-          <span class="text-xs text-zinc-400">{{ getQty(type.id) }} × {{ formatPrice(type.price) }}</span>
-          <span class="text-sm font-semibold text-white">{{ formatPrice(type.price * getQty(type.id)) }}</span>
+          <span class="text-xs text-zinc-400">{{ getQty(getTypeId(type)) }} × {{ formatPrice(type.price) }}</span>
+          <span class="text-sm font-semibold text-white">{{ formatPrice(type.price * getQty(getTypeId(type))) }}</span>
         </div>
       </Transition>
     </div>
@@ -118,27 +121,51 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+function getTypeId(type) {
+  return type?.id ?? type?.ticketTierId ?? type?.tierId ?? type?.ticketTypeId ?? type?.name
+}
+
+function typeAvailability(type) {
+  const raw = type?.available
+    ?? type?.quantityAvailable
+    ?? type?.availableCount
+    ?? type?.remainingCount
+    ?? type?.remaining
+    ?? type?.stock
+    ?? 0
+  const value = Number(raw)
+  return Number.isFinite(value) ? Math.max(0, value) : 0
+}
+
+function typeMaxPerOrder(type) {
+  const raw = type?.maxPerOrder ?? type?.maxPerUser ?? type?.limitPerOrder ?? 4
+  const value = Number(raw)
+  return Number.isFinite(value) ? Math.max(1, value) : 4
+}
+
 function getQty(typeId) {
-  return props.modelValue.find((s) => s.ticketType.id === typeId)?.qty ?? 0
+  return props.modelValue.find((s) => getTypeId(s.ticketType) === typeId)?.qty ?? 0
 }
 
 function setQty(type, qty) {
+  const typeId = getTypeId(type)
   const updated = props.ticketTypes.map((t) => ({
     ticketType: t,
-    qty: t.id === type.id ? qty : getQty(t.id),
+    qty: getTypeId(t) === typeId ? qty : getQty(getTypeId(t)),
   }))
   emit('update:modelValue', updated)
 }
 
 function increment(type) {
-  const current = getQty(type.id)
-  if (current < type.maxPerOrder && current < type.available) {
+  const typeId = getTypeId(type)
+  const current = getQty(typeId)
+  if (current < typeMaxPerOrder(type) && current < typeAvailability(type)) {
     setQty(type, current + 1)
   }
 }
 
 function decrement(type) {
-  const current = getQty(type.id)
+  const current = getQty(getTypeId(type))
   if (current > 0) setQty(type, current - 1)
 }
 

@@ -423,6 +423,7 @@ export const useBookingStore = defineStore('booking', () => {
                 return
             }
             const payload = {
+                userId: auth.user?.id,
                 eventId: event.value.id,
                 items: selections.value.map((s) => ({
                     ticketTierId: s.ticketType.id,
@@ -786,7 +787,10 @@ export const useBookingStore = defineStore('booking', () => {
         loading.value = true
         error.value = null
         try {
-            const data = await voucherService.validateVoucher(code)
+            const data = await voucherService.validateVoucher(code, {
+                eventId: event.value?.id,
+                orderAmount: subtotal.value,
+            })
             appliedVoucher.value = {
                 code: code.trim(),
                 discount: data?.discount || data?.discountValue || 0,
