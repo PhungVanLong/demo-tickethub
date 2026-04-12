@@ -116,6 +116,18 @@ const routes = [
                 component: () => import('@/pages/RegisterPage.vue'),
                 meta: { guestOnly: true },
             },
+            {
+                path: 'forgot-password',
+                name: 'ForgotPassword',
+                component: () => import('@/pages/ForgotPasswordOtpPage.vue'),
+                meta: { guestOnly: true },
+            },
+            {
+                path: 'reset-password',
+                name: 'ResetPassword',
+                component: () => import('@/pages/ResetPasswordPage.vue'),
+                meta: { guestOnly: true },
+            },
         ],
     },
     {

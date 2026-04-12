@@ -40,7 +40,7 @@
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Password</label>
-            <a href="#" class="text-xs text-violet-400 hover:text-violet-300 transition-colors">Forgot password?</a>
+            <RouterLink to="/forgot-password" class="text-xs text-violet-400 hover:text-violet-300 transition-colors">Forgot password?</RouterLink>
           </div>
           <div class="relative">
             <input
