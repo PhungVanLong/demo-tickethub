@@ -70,6 +70,19 @@ Authorization: Bearer <accessToken>
 }
 ```
 
+### Forgot Password (Quên mật khẩu)
+
+- Endpoint: `POST /api/auth/forgot-password` (gửi OTP về email)
+- Endpoint: `POST /api/auth/reset-password` (xác thực OTP và đặt lại mật khẩu mới)
+
+**Lưu ý UI:**
+- Nếu tài khoản được tạo bằng Google, người dùng vẫn có thể đặt lại mật khẩu mới qua email này.
+- Sau khi đặt lại mật khẩu, người dùng có thể đăng nhập bằng email và mật khẩu mới, hoặc tiếp tục đăng nhập bằng Google như bình thường.
+- Nếu email không tồn tại, backend trả về lỗi 404.
+
+**Khuyến nghị:**
+- Hiển thị note này ở màn hình "Quên mật khẩu" để người dùng hiểu rõ về chức năng.
+
 ## 3. Security and Access Rules
 
 Public:

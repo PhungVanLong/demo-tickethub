@@ -37,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
+
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -44,6 +45,30 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final OtpService otpService;
+    private final EmailService emailService;
+    public void forgotPassword(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+        User user = userRepository.findByEmail(normalizedEmail)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Email không tồn tại"));
+        String otp = otpService.generateOtp(normalizedEmail);
+        try {
+            emailService.sendOtpEmail(normalizedEmail, otp);
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Không thể gửi email. Vui lòng kiểm tra cấu hình mail hoặc thử lại sau!\nChi tiết: " + ex.getMessage());
+        }
+    }
+
+    public void resetPassword(String email, String otp, String newPassword) {
+        String normalizedEmail = email.trim().toLowerCase();
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Email không tồn tại"));
+        if (!otpService.verifyOtp(normalizedEmail, otp)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OTP không hợp lệ hoặc đã hết hạn");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
 
     @Value("${google.oauth.client-id:${GOOGLE_OAUTH_CLIENT_ID:${GOOGLE_CLIENT_ID:}}}")
     private String googleOAuthClientId;
@@ -52,8 +77,31 @@ public class AuthService {
     public AuthResponse register(RegisterRequest request) {
         String normalizedEmail = request.email().trim().toLowerCase();
 
-        if (userRepository.existsByEmail(normalizedEmail)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already registered");
+        // Kiểm tra email đã tồn tại
+        var existingOpt = userRepository.findByEmail(normalizedEmail);
+        if (existingOpt.isPresent()) {
+            User existing = existingOpt.get();
+            // Nếu passwordHash là random (tức là tài khoản Google, không có mật khẩu thực)
+            // Giả định: mật khẩu random khi tạo Google user là 36 ký tự (UUID)
+            if (existing.getPasswordHash() != null && existing.getPasswordHash().length() != 60) {
+                // Đã đăng nhập bằng Google, cho phép cập nhật mật khẩu mới
+                existing.setPasswordHash(passwordEncoder.encode(request.password()));
+                existing.setFullName(request.fullName());
+                existing.setPhone(request.phone());
+                userRepository.save(existing);
+                String token = jwtService.generateToken(existing);
+                return new AuthResponse(
+                        token,
+                        "Bearer",
+                        existing.getId(),
+                        existing.getEmail(),
+                        existing.getFullName(),
+                        existing.getRole()
+                );
+            } else {
+                // Đã đăng ký bằng tài khoản thường
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already registered");
+            }
         }
 
         User user = User.builder()
