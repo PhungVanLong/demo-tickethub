@@ -1,4 +1,4 @@
-﻿# Frontend Integration Contract
+# Frontend Integration Contract
 
 Updated on: 2026-04-05
 
@@ -1989,3 +1989,51 @@ Role behavior:
 - **Consistency (Tính nhất quán):** Dữ liệu trả về qua API phải luôn tuân thủ cấu trúc PageResponse chuẩn để Frontend có thể sử dụng các thư viện UI Kit phân trang một cách đồng bộ.
 - **Concurrency (Xử lý đồng thời):** Hệ thống có cơ chế hàng đợi và khóa (locking) để xử lý kịch bản tranh chấp vé (contention) khi có hàng ngàn yêu cầu mua vé cùng lúc.
 - **Memory Efficiency:** Backend áp dụng cơ chế giải phóng bộ nhớ (flush/clear) và Batch Fetching giúp ứng dụng hoạt động ổn định trên các môi trường có RAM giới hạn (từ 2GB trở lên).
+
+## 14. Admin Management APIs
+
+Các API quản lý này chỉ dành riêng cho quyền `ADMIN` (yêu cầu Authorization Bearer Token). Cấu trúc API được cập nhật chuẩn xác theo code Backend hiện tại:
+
+### 14.1 Quản trị User (User Management)
+Tất cả endpoint dưới đây nằm trong route `/api/users`. Admin có toàn quyền với các thao tác trạng thái / role user.
+- **Lấy tất cả Users:** `GET /api/users` (Trừ GET search, hiện API trả về `List<User>` thẳng chứ chưa có bọc PageRespone).
+- **Tìm kiếm Users:** `GET /api/users/search?term={term}`
+- **Bật / Tắt tài khoản:**
+  - `POST /api/users/{userId}/activate`
+  - `POST /api/users/{userId}/deactivate`
+- **Quản lý quyền hạn (Role Changes):**
+  - `POST /api/users/{userId}/promote-organizer`
+  - `POST /api/users/{userId}/demote-customer`
+
+### 14.2 Quản trị Sự kiện (Admin Event Management)
+Ngoài việc List sự kiện, Admin có endpoint Delete riêng biệt để bỏ qua quyền sở hữu gốc (Ownership check bypass).
+- **Lấy Danh sách Sự Kiện:**
+  - `GET /api/events?page={page}&size={size}` (Lấy Mọi sự kiện).
+  - `GET /api/events/pending?page={page}&size={size}` (Chỉ lấy PENDING đợi duyệt).
+  - *(Lưu ý: Luôn truyền Page/Size)*
+- **Duyệt / Reject Sự Kiện:**
+  - `POST /api/events/{eventId}/approve` - Body: `{ "reason": "chấp nhận" }`
+  - `POST /api/events/{eventId}/reject` - Body: `{ "reason": "Thiếu thông tin" }`
+- **Xóa vĩnh viễn:** `DELETE /api/admin/events/{eventId}`
+
+### 14.3 Quản lý Nguồn thu & Chi trả (Revenue & Payouts)
+Các API giúp Admin kiểm soát dòng tiền và chi trả cho Organizer. Parameter `from` và `to` đều định dạng chuẩn ISO-8601 UTC.
+- **Lấy Doanh Thu Tổng:** `GET /api/admin/revenue/summary?from={iso}&to={iso}`
+- **Lấy Danh Sách Thanh Toán:** `GET /api/admin/payments?from={iso}&to={iso}`
+- **Xem Thử Quỹ Chi Trả (Preview Payout):**
+  `GET /api/admin/payouts/organizers/{organizerId}/preview?from={iso}&to={iso}`
+- **Thực Hiện Chi Trả Tiền (Execute Payout):**
+  `POST /api/admin/payouts/organizers/{organizerId}`
+  Body: `{ "from": "{iso}", "to": "{iso}", "payoutReference": "Tx2026...", "note": "..." }`
+
+### 14.4 Quản trị Khuyến Mãi Hệ Thống (Platform Voucher / Platform Sale)
+- **Danh Mục Voucher Platform:** `POST /api/admin/vouchers/platform` 
+- **Tạo Chiến dịch Platform Sale:** `POST /api/admin/platform-sales`
+- **Liệt kê Platform Sales:** 
+  - `GET /api/admin/platform-sales` (?isActive mặc định là true)
+  - `GET /api/admin/platform-sales/active` (Public route không cần Auth dành cho Check)
+- **Tắt/Hủy Platform Sale:** `DELETE /api/admin/platform-sales/{saleId}`
+
+### 14.5 Tóm Tắt Số Liệu (Dashboard KPIs)
+- **Dashboard Tổng:** `GET /api/dashboard` (Backend tự check bạn là Admin và wrap tất cả dữ liệu User/Event/Order/Doanh Thu Platform vào response object có type `ADMIN`).
+- **Stats Nhỏ Tách Biệt:** `GET /api/stats/platform` (Lấy dữ liệu thuần tuý con số nền tảng mà không dính tới account request).

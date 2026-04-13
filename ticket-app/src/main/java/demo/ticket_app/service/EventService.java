@@ -62,9 +62,9 @@ public class EventService {
     private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
-    public PageResponse<EventListItemResponse> getAllEvents(int page, int size) {
+    public PageResponse<EventListItemResponse> getAllEvents(int page, int size, EventStatus status, String search) {
         var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        var eventsPage = eventRepository.findAll(pageable);
+        var eventsPage = eventRepository.findAdminFilteredEvents(status, search, pageable);
         List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
         return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
                 eventsPage.getTotalElements(), eventsPage.getTotalPages());
@@ -447,6 +447,7 @@ public class EventService {
                 Objects.requireNonNullElse(normalized.getReviewCount(), 0L),
                 metrics.soldCount(),
                 metrics.totalCapacity(),
+                metrics.isAlmostSoldOut(),
                 toOrganizer(normalized.getOrganizerId())
         );
     }
@@ -502,6 +503,7 @@ public class EventService {
                             Objects.requireNonNullElse(normalized.getReviewCount(), 0L),
                             metrics.soldCount(),
                             metrics.totalCapacity(),
+                            metrics.isAlmostSoldOut(),
                             toOrganizer(normalized.getOrganizerId(), organizerMap)
                     );
                 })
@@ -613,14 +615,19 @@ public class EventService {
             tiers = tiers.stream().filter(tier -> !isAutoDefaultTier(tier)).toList();
         }
         if (tiers.isEmpty()) {
-            return new EventPricingMetrics(null, null, 0L, 0L);
+            return new EventPricingMetrics(null, null, 0L, 0L, false);
         }
         BigDecimal minPrice = tiers.stream().map(TicketTier::getPrice).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
         BigDecimal maxPrice = tiers.stream().map(TicketTier::getPrice).max(BigDecimal::compareTo).orElse(minPrice);
         long totalCapacity = tiers.stream().map(TicketTier::getQuantityTotal).filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
         long available = tiers.stream().map(TicketTier::getQuantityAvailable).filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
+        boolean isAlmostSoldOut = tiers.stream()
+                .anyMatch(tier -> {
+                    Integer qty = tier.getQuantityAvailable();
+                    return qty != null && (qty == 1 || qty == 2);
+                });
         long soldCount = Math.max(0, totalCapacity - available);
-        return new EventPricingMetrics(minPrice, maxPrice, soldCount, totalCapacity);
+        return new EventPricingMetrics(minPrice, maxPrice, soldCount, totalCapacity, isAlmostSoldOut);
     }
 
     private OffsetDateTime toUtc(LocalDateTime localDateTime) {
@@ -655,7 +662,7 @@ public class EventService {
         return base + "-" + System.currentTimeMillis();
     }
 
-    private record EventPricingMetrics(BigDecimal minPrice, BigDecimal originalPrice, long soldCount, long totalCapacity) {
+    private record EventPricingMetrics(BigDecimal minPrice, BigDecimal originalPrice, long soldCount, long totalCapacity, boolean isAlmostSoldOut) {
     }
 
     private void createAutoDefaultTierIfRequested(Event event, CreateEventRequest request) {

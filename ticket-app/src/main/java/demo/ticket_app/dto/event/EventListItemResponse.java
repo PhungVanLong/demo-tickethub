@@ -27,6 +27,7 @@ public record EventListItemResponse(
         long reviewCount,
         long soldCount,
         long totalCapacity,
+        boolean isAlmostSoldOut,
         OrganizerSummaryResponse organizer
 ) {
 }

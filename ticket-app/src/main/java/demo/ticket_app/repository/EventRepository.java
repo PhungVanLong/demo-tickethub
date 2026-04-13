@@ -20,19 +20,23 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Query("SELECT e FROM Event e WHERE e.status = demo.ticket_app.entity.EventStatus.PUBLISHED " +
         "AND (:category IS NULL OR LOWER(e.category) = :category) " +
         "AND (:city IS NULL OR LOWER(e.city) = :city) " +
-        "AND (:featured IS NULL OR e.featured = :featured)")
+        "AND (:featured IS NULL OR e.featured = :featured) " +
+        "AND (:search IS NULL OR :search = '' OR LOWER(e.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(e.description) LIKE LOWER(CONCAT('%', :search, '%')))")
     Page<Event> findPublishedEvents(@Param("category") String category,
                     @Param("city") String city,
                     @Param("featured") Boolean featured,
+                    @Param("search") String search,
                     Pageable pageable);
 
     @Query("SELECT e FROM Event e WHERE e.status = demo.ticket_app.entity.EventStatus.PUBLISHED " +
             "AND (:category IS NULL OR LOWER(e.category) = :category) " +
             "AND (:city IS NULL OR LOWER(e.city) = :city) " +
-            "AND (:featured IS NULL OR e.featured = :featured)")
+            "AND (:featured IS NULL OR e.featured = :featured) " +
+            "AND (:search IS NULL OR :search = '' OR LOWER(e.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(e.description) LIKE LOWER(CONCAT('%', :search, '%')))")
     List<Event> findPublishedEvents(@Param("category") String category,
                                     @Param("city") String city,
-                                    @Param("featured") Boolean featured);
+                                    @Param("featured") Boolean featured,
+                                    @Param("search") String search);
     
     List<Event> findByOrganizerId(UUID organizerId);
     
@@ -57,6 +61,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     long countByOrganizerIdAndStatus(@Param("organizerId") UUID organizerId, 
                                     @Param("status") EventStatus status);
     
+    @Query("SELECT e FROM Event e WHERE " +
+           "(:status IS NULL OR e.status = :status) AND " +
+           "(:search IS NULL OR :search = '' OR LOWER(e.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(e.description) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<Event> findAdminFilteredEvents(@Param("status") EventStatus status, @Param("search") String search, Pageable pageable);
+
     @Query("SELECT e FROM Event e WHERE e.title LIKE %:search% OR e.description LIKE %:search%")
     Page<Event> findByTitleOrDescriptionContaining(@Param("search") String search, Pageable pageable);
 

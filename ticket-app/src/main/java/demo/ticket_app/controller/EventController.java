@@ -47,8 +47,18 @@ public class EventController {
     @GetMapping
     public ResponseEntity<PageResponse<EventListItemResponse>> getAllEvents(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        PageResponse<EventListItemResponse> events = eventService.getAllEvents(page, size);
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(name = "q", required = false) String search) {
+        EventStatus eventStatus = null;
+        if (status != null && !status.trim().isEmpty() && !status.equalsIgnoreCase("all")) {
+            try {
+                eventStatus = EventStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // Ignore invalid status
+            }
+        }
+        PageResponse<EventListItemResponse> events = eventService.getAllEvents(page, size, eventStatus, search);
         return ResponseEntity.ok(events);
     }
 
