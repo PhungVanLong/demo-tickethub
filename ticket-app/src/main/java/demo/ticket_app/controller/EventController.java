@@ -69,8 +69,9 @@ public class EventController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String city,
             @RequestParam(required = false) Boolean featured,
-            @RequestParam(defaultValue = "date_asc") String sort) {
-        return ResponseEntity.ok(eventService.getPublishedEvents(page, size, category, city, featured, sort));
+            @RequestParam(defaultValue = "date_asc") String sort,
+            @RequestParam(name = "q", required = false) String search) {
+        return ResponseEntity.ok(eventService.getPublishedEvents(page, size, category, city, featured, sort, search));
     }
 
     @GetMapping("/pending")

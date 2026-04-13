@@ -81,7 +81,7 @@ public class EventService {
 
     @Cacheable(
         value = "events",
-        key = "'published:' + #page + ':' + #size + ':' + #category + ':' + #city + ':' + #featured + ':' + #sort"
+        key = "'published:' + #page + ':' + #size + ':' + #category + ':' + #city + ':' + #featured + ':' + #sort + ':' + #search"
     )
     @Transactional(readOnly = true)
     public PageResponse<EventListItemResponse> getPublishedEvents(
@@ -90,13 +90,14 @@ public class EventService {
             String category,
             String city,
             Boolean featured,
-            String sort
+            String sort,
+            String search
     ) {
         String normalizedCategory = normalizeFilter(category);
         String normalizedCity = normalizeFilter(city);
 
         if ("price_asc".equals(sort) || "price_desc".equals(sort)) {
-            List<Event> allEvents = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured);
+            List<Event> allEvents = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, search);
             List<EventListItemResponse> all = toEventListItems(allEvents).stream()
                 .sorted("price_desc".equals(sort)
                     ? Comparator.comparing(EventListItemResponse::minPrice, Comparator.nullsLast(BigDecimal::compareTo)).reversed()
@@ -114,7 +115,7 @@ public class EventService {
         }
 
         var pageable = PageRequest.of(page, size, resolveSort(sort));
-        var eventsPage = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, pageable);
+        var eventsPage = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, search, pageable);
         List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
         return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
                 eventsPage.getTotalElements(), eventsPage.getTotalPages());
