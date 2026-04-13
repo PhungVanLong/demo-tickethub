@@ -38,9 +38,13 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     
     List<Event> findByStatus(EventStatus status);
     
+    Page<Event> findByStatus(EventStatus status, Pageable pageable);
+    
     List<Event> findByCity(String city);
     
     List<Event> findByStatusAndCity(EventStatus status, String city);
+
+    long countByTitleStartingWith(String titlePrefix);
     
     @Query("SELECT e FROM Event e WHERE e.startTime >= :startTime AND e.startTime <= :endTime")
     List<Event> findByStartTimeBetween(@Param("startTime") LocalDateTime startTime, 
@@ -56,6 +60,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Query("SELECT e FROM Event e WHERE e.title LIKE %:search% OR e.description LIKE %:search%")
     Page<Event> findByTitleOrDescriptionContaining(@Param("search") String search, Pageable pageable);
 
-    @Query("SELECT DISTINCT e.category FROM Event e WHERE e.category IS NOT NULL")
-    List<String> findDistinctCategories();
+    @Query(value = "SELECT DISTINCT e.category FROM Event e WHERE e.category IS NOT NULL",
+           countQuery = "SELECT COUNT(DISTINCT e.category) FROM Event e WHERE e.category IS NOT NULL")
+    Page<String> findDistinctCategories(Pageable pageable);
 }

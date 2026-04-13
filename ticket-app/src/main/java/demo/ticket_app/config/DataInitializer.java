@@ -27,6 +27,8 @@ import demo.ticket_app.repository.EventRepository;
 import demo.ticket_app.repository.SeatMapRepository;
 import demo.ticket_app.repository.TicketTierRepository;
 import demo.ticket_app.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,6 +43,9 @@ public class DataInitializer implements CommandLineRunner {
     private final TicketTierRepository ticketTierRepository;
     private final EventApprovalRepository eventApprovalRepository;
     private final PasswordEncoder passwordEncoder;
+
+    @PersistenceContext
+    private final EntityManager entityManager;
 
     @Value("${admin.email:admin@tickethub.com}")
     private String adminEmail;
@@ -139,11 +144,16 @@ public class DataInitializer implements CommandLineRunner {
                     .build());
             if (batch.size() == BATCH_SIZE) {
                 userRepository.saveAll(batch);
+                entityManager.flush();
+                entityManager.clear();
                 batch.clear();
             }
         }
-        if (!batch.isEmpty())
+        if (!batch.isEmpty()) {
             userRepository.saveAll(batch);
+            entityManager.flush();
+            entityManager.clear();
+        }
         log.info("Users seeded: {} total", userRepository.count());
     }
 
@@ -250,8 +260,16 @@ public class DataInitializer implements CommandLineRunner {
                         .build());
             }
 
-            if ((i + 1) % 10 == 0) {
+            if ((i + 1) % BATCH_SIZE == 0) {
+                entityManager.flush();
+                entityManager.clear();
                 log.info("Seeded {}/{} events...", i + 1, EVENT_TARGET);
+                
+                // Re-fetch organizers and admin since clear() detached them
+                organizers = userRepository.findAll().stream()
+                        .filter(u -> u.getRole() == UserRole.ORGANIZER || u.getRole() == UserRole.ADMIN)
+                        .toList();
+                admin = userRepository.findByEmail(adminEmail).orElse(organizers.get(0));
             }
         }
         log.info("Events seeded: {} total", eventRepository.count());
@@ -259,11 +277,8 @@ public class DataInitializer implements CommandLineRunner {
 
     private void seedContentionTestEvents() {
         String titlePrefix = "Contention Test Event";
-        // Check if any contention test events already exist (count by prefix search
-        // loosely)
-        long existing = eventRepository.findAll().stream()
-                .filter(e -> e.getTitle() != null && e.getTitle().startsWith(titlePrefix))
-                .count();
+        // Optimized: Count directly in DB instead of loading all events
+        long existing = eventRepository.countByTitleStartingWith(titlePrefix);
 
         if (existing >= CONTENTION_TEST_TARGET) {
             log.info("Contention Test Events: {} records exist, skip seeding.", existing);
@@ -330,6 +345,11 @@ public class DataInitializer implements CommandLineRunner {
                     .saleStart(LocalDateTime.now().minusDays(1))
                     .saleEnd(LocalDateTime.now().plusDays(30))
                     .build());
+            
+            if ((i + 1) % BATCH_SIZE == 0) {
+                entityManager.flush();
+                entityManager.clear();
+            }
         }
         log.info("Contention test events seeded: {} total", CONTENTION_TEST_TARGET);
     }

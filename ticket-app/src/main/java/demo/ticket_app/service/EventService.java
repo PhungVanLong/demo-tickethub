@@ -62,6 +62,15 @@ public class EventService {
     private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
+    public PageResponse<EventListItemResponse> getAllEvents(int page, int size) {
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        var eventsPage = eventRepository.findAll(pageable);
+        List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
+        return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
+                eventsPage.getTotalElements(), eventsPage.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
     public List<EventListItemResponse> getAllEvents() {
         return toEventListItems(eventRepository.findAll());
     }
@@ -106,6 +115,15 @@ public class EventService {
 
         var pageable = PageRequest.of(page, size, resolveSort(sort));
         var eventsPage = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, pageable);
+        List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
+        return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
+                eventsPage.getTotalElements(), eventsPage.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<EventListItemResponse> getPendingEvents(int page, int size) {
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        var eventsPage = eventRepository.findByStatus(EventStatus.PENDING, pageable);
         List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
         return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
                 eventsPage.getTotalElements(), eventsPage.getTotalPages());
@@ -379,8 +397,11 @@ public class EventService {
     }
 
     @Transactional(readOnly = true)
-    public List<String> getEventCategories() {
-        return eventRepository.findDistinctCategories();
+    public PageResponse<String> getEventCategories(int page, int size) {
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "category"));
+        var categoriesPage = eventRepository.findDistinctCategories(pageable);
+        return new PageResponse<>(categoriesPage.getContent(), categoriesPage.getNumber(),
+                categoriesPage.getSize(), categoriesPage.getTotalElements(), categoriesPage.getTotalPages());
     }
 
     private Sort resolveSort(String sort) {

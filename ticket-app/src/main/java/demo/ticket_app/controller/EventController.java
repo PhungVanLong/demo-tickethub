@@ -45,8 +45,10 @@ public class EventController {
     private final SecurityUtils securityUtils;
 
     @GetMapping
-    public ResponseEntity<List<EventListItemResponse>> getAllEvents() {
-        List<EventListItemResponse> events = eventService.getAllEvents();
+    public ResponseEntity<PageResponse<EventListItemResponse>> getAllEvents(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageResponse<EventListItemResponse> events = eventService.getAllEvents(page, size);
         return ResponseEntity.ok(events);
     }
 
@@ -62,8 +64,10 @@ public class EventController {
     }
 
     @GetMapping("/pending")
-    public ResponseEntity<List<EventListItemResponse>> getPendingEvents() {
-        List<EventListItemResponse> events = eventService.getPendingEvents();
+    public ResponseEntity<PageResponse<EventListItemResponse>> getPendingEvents(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageResponse<EventListItemResponse> events = eventService.getPendingEvents(page, size);
         return ResponseEntity.ok(events);
     }
 
@@ -95,9 +99,10 @@ public class EventController {
     }
 
     @GetMapping("/categories")
-    public ResponseEntity<Map<String, List<String>>> getEventCategories() {
-        List<String> categories = eventService.getEventCategories();
-        return ResponseEntity.ok(Map.of("categories", categories));
+    public ResponseEntity<PageResponse<String>> getEventCategories(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(eventService.getEventCategories(page, size));
     }
 
     @PostMapping
