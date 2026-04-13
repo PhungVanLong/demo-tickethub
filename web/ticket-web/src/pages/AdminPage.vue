@@ -49,10 +49,9 @@
         <div class="flex flex-col sm:flex-row gap-3">
           <input v-model="eventSearch" type="text" placeholder="Search events…" class="input-field text-sm py-2.5 max-w-xs" />
           <select v-model="eventStatusFilter" class="input-field text-sm py-2.5 w-44">
-            <option value="all">All Status</option>
-            <option value="published">Published</option>
-            <option value="pending">Pending Approval</option>
-            <option value="rejected">Rejected</option>
+            <option v-for="status in eventStatusCatalog" :key="status.value" :value="status.value">
+              {{ status.label }}
+            </option>
           </select>
         </div>
 
@@ -63,31 +62,9 @@
             :current-page="adminStore.eventPage"
             :page-size="adminStore.eventPageSize"
             :total-pages="adminStore.eventTotalPages"
-            @page-change="onEventPageChange"
+            @page="onEventPageChange"
             empty-text="No events found"
           >
-          // Phân trang động cho bảng sự kiện
-          function onEventPageChange(page) {
-            adminStore.fetchAllEvents({
-              page,
-              size: adminStore.eventPageSize,
-              status: eventStatusFilter.value,
-              search: eventSearch.value.trim(),
-            })
-          }
-
-          watch([eventStatusFilter, eventSearch], () => {
-            adminStore.fetchAllEvents({
-              page: 1,
-              size: adminStore.eventPageSize,
-              status: eventStatusFilter.value,
-              search: eventSearch.value.trim(),
-            })
-          })
-
-          onMounted(() => {
-            adminStore.fetchAllEvents({ page: 1, size: adminStore.eventPageSize })
-          })
           <template #cell-title="{ row }">
             <div class="flex items-center gap-3">
               <img :src="resolveEventImage(row)" :alt="row.title" class="w-10 h-10 rounded-lg object-cover shrink-0" />
@@ -504,32 +481,7 @@
 </template>
 
 <script setup>
-import { watch } from 'vue'
-// ...existing code...
-
-// Phân trang động cho bảng sự kiện
-function onEventPageChange(page) {
-  adminStore.fetchAllEvents({
-    page,
-    size: adminStore.eventPageSize,
-    status: eventStatusFilter.value,
-    search: eventSearch.value.trim(),
-  })
-}
-
-watch([eventStatusFilter, eventSearch], () => {
-  adminStore.fetchAllEvents({
-    page: 1,
-    size: adminStore.eventPageSize,
-    status: eventStatusFilter.value,
-    search: eventSearch.value.trim(),
-  })
-})
-
-onMounted(() => {
-  adminStore.fetchAllEvents({ page: 1, size: adminStore.eventPageSize })
-})
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, watch } from 'vue'
 import AdminTable from '@/components/AdminTable.vue'
 import PlatformSalesManagement from '@/components/PlatformSalesManagement.vue'
 import AdminPlatformVoucherManagement from '@/components/AdminPlatformVoucherManagement.vue'
@@ -537,6 +489,31 @@ import { useAdminStore } from '@/stores/admin.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { categories }    from '@/data/events'
 import { resolveMediaUrl } from '@/utils/mediaUrl'
+
+
+const eventStatusCatalog = [
+  { value: 'all', label: 'All Status' },
+  { value: 'published', label: 'Published' },
+  { value: 'pending', label: 'Pending Approval' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'cancelled', label: 'Cancelled' }
+]
+
+// Khai báo filter và biến liên quan lên đầu để tránh lỗi ReferenceError
+const activeTab          = ref('events')
+const showCreateModal    = ref(false)
+const editingEvent       = ref(null)
+const deleteTarget       = ref(null)
+const eventSearch        = ref('')
+const eventStatusFilter  = ref('all')
+const orderSearch        = ref('')
+const orderStatusFilter  = ref('all')
+const userSearch         = ref('')
+const userRoleFilter     = ref('all')
+const revenueFrom        = ref('')
+const revenueTo          = ref('')
 
 const adminStore = useAdminStore()
 const auth = useAuthStore()
@@ -555,18 +532,32 @@ function requireAdminRole(actionName = 'action') {
   return true
 }
 
-const activeTab          = ref('events')
-const showCreateModal    = ref(false)
-const editingEvent       = ref(null)
-const deleteTarget       = ref(null)
-const eventSearch        = ref('')
-const eventStatusFilter  = ref('all')
-const orderSearch        = ref('')
-const orderStatusFilter  = ref('all')
-const userSearch         = ref('')
-const userRoleFilter     = ref('all')
-const revenueFrom        = ref('')
-const revenueTo          = ref('')
+// Phân trang động cho bảng sự kiện
+function onEventPageChange(page) {
+  adminStore.fetchAllEvents({
+    page,
+    size: adminStore.eventPageSize,
+    status: eventStatusFilter.value,
+    search: eventSearch.value.trim(),
+  })
+}
+
+let eventSearchTimer = null
+watch([eventStatusFilter, eventSearch], () => {
+  clearTimeout(eventSearchTimer)
+  eventSearchTimer = setTimeout(() => {
+    adminStore.fetchAllEvents({
+      page: 1,
+      size: adminStore.eventPageSize,
+      status: eventStatusFilter.value,
+      search: eventSearch.value.trim(),
+    })
+  }, 350)
+})
+
+onMounted(() => {
+  adminStore.fetchAllEvents({ page: 1, size: adminStore.eventPageSize })
+})
 
 function toDateInput(date) {
   const d = new Date(date)
@@ -681,21 +672,7 @@ const orderColumns = [
   { key: 'bookedAt',   label: 'Placed At'  },
 ]
 
-const filteredAdminEvents = computed(() => {
-  let list = adminStore.allEvents
-  if (eventStatusFilter.value !== 'all') {
-    const targetStatus = String(eventStatusFilter.value || '').toLowerCase()
-    list = list.filter((e) => String(e.status || '').toLowerCase() === targetStatus)
-  }
-  if (eventSearch.value.trim()) {
-    const q = eventSearch.value.toLowerCase()
-    list = list.filter((e) =>
-      (e.title    ?? '').toLowerCase().includes(q) ||
-      (e.category ?? '').toLowerCase().includes(q)
-    )
-  }
-  return list
-})
+
 
 const filteredAdminOrders = computed(() => {
   let list = adminStore.allOrders
@@ -737,38 +714,41 @@ const organizerUsers = computed(() =>
   adminStore.users.filter((u) => u.role === 'ORGANIZER')
 )
 
-const kpis = computed(() => [
-  {
-    label: 'Total Revenue',
-    value: adminStore.kpiRevenue
-      ? new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(adminStore.kpiRevenue)
-      : '₫ —',
-    trend: '↑ 12.4%', trendUp: true,
-    iconBg: 'bg-emerald-500/20', iconColor: 'text-emerald-400',
-    icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
-  },
-  {
-    label: 'Total Events',
-    value: adminStore.allEvents.length || adminStore.kpiOrders || '—',
-    trend: `↑ ${adminStore.pendingEvents.length} pending`, trendUp: true,
-    iconBg: 'bg-violet-500/20', iconColor: 'text-violet-400',
-    icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-  },
-  {
-    label: 'Total Orders',
-    value: adminStore.kpiOrders ?? adminStore.allOrders.length,
-    trend: '↑ 8.1%', trendUp: true,
-    iconBg: 'bg-blue-500/20', iconColor: 'text-blue-400',
-    icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
-  },
-  {
-    label: 'Active Users',
-    value: adminStore.kpiUsers ?? (adminStore.users.length || '—'),
-    trend: '↑ 5.3%', trendUp: true,
-    iconBg: 'bg-amber-500/20', iconColor: 'text-amber-400',
-    icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
-  },
-])
+const kpis = computed(() => {
+  const stats = adminStore.platformStats || {}
+  return [
+    {
+      label: 'Gross GMV (1M)',
+      value: stats.monthlyGMV != null
+        ? new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(stats.monthlyGMV)
+        : '₫ —',
+      trend: '1 month total', trendUp: true,
+      iconBg: 'bg-emerald-500/20', iconColor: 'text-emerald-400',
+      icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+    },
+    {
+      label: 'Total Events',
+      value: stats.totalEvents ?? adminStore.eventTotalElements ?? '—',
+      trend: `↑ ${stats.pendingEvents ?? 0} pending`, trendUp: true,
+      iconBg: 'bg-violet-500/20', iconColor: 'text-violet-400',
+      icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    },
+    {
+      label: 'Orders Today',
+      value: stats.confirmedOrdersToday ?? '—',
+      trend: 'confirmed today', trendUp: true,
+      iconBg: 'bg-blue-500/20', iconColor: 'text-blue-400',
+      icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+    },
+    {
+      label: 'Total Users',
+      value: stats.totalUsers ?? '—',
+      trend: `${stats.activeUsers ?? 0} active`, trendUp: true,
+      iconBg: 'bg-amber-500/20', iconColor: 'text-amber-400',
+      icon: '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    },
+  ]
+})
 
 const mockUsers = []  // removed — using adminStore.users
 

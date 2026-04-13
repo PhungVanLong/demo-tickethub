@@ -91,6 +91,26 @@
       </div>
     </section>
 
+
+    <!-- ===== ALMOST SOLD OUT EVENTS ===== -->
+    <section v-if="almostSoldOutEvents.length" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div class="mb-6 flex items-center gap-3">
+        <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M17.657 16.657 13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/>
+          <path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+        </svg>
+        <h2 class="text-xl sm:text-2xl font-black text-amber-400">Sự kiện sắp hết vé (chỉ còn 1-2 vé)</h2>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+        <EventCard
+          v-for="(event, idx) in almostSoldOutEvents"
+          :key="event.id"
+          :event="event"
+          :eventIndex="idx"
+        />
+      </div>
+    </section>
+
     <!-- ===== EVENT LISTING ===== -->
     <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
 
@@ -101,7 +121,7 @@
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h2 class="text-3xl font-black text-white">Upcoming Events</h2>
-          <p class="text-zinc-500 text-sm mt-1">{{ filteredEvents.length }} events found</p>
+          <p class="text-zinc-500 text-sm mt-1">{{ totalResults }} events found</p>
         </div>
 
         <!-- Search -->
@@ -137,9 +157,8 @@
 
       <!-- Sort -->
       <div class="flex items-center justify-between mb-6">
-        <p class="text-sm text-zinc-500">
-          <span class="text-white font-semibold">{{ filteredEvents.length }}</span> results
-        </p>
+          <span class="text-white font-semibold">{{ totalResults }}</span> results
+        
         <select v-model="sortBy" class="input-field text-sm py-2 w-44">
           <option value="date">Sort: Date</option>
           <option value="price_asc">Price: Low to High</option>
@@ -178,22 +197,38 @@
       </div>
 
       <!-- Pagination -->
-      <div v-if="filteredEventsAll.length > pageSize" class="flex justify-center mt-10">
+      <div v-if="totalPages > 1" class="flex justify-center mt-10">
         <nav class="inline-flex items-center gap-2">
           <button
-            class="px-3 py-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+            class="px-4 py-2 rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             :disabled="currentPage === 1"
             @click="currentPage--"
           >
-            Trước
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
-          <span class="text-white font-semibold px-2">Trang {{ currentPage }} / {{ totalPages }}</span>
+          
+          <div class="flex items-center gap-1">
+            <template v-for="p in totalPages" :key="p">
+              <button
+                v-if="p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1"
+                class="w-10 h-10 rounded-xl text-sm font-bold transition-all border"
+                :class="p === currentPage 
+                  ? 'bg-violet-600 border-violet-500 text-white' 
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-700'"
+                @click="currentPage = p"
+              >
+                {{ p }}
+              </button>
+              <span v-else-if="Math.abs(p - currentPage) === 2" class="text-zinc-700 px-1">...</span>
+            </template>
+          </div>
+
           <button
-            class="px-3 py-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+            class="px-4 py-2 rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             :disabled="currentPage === totalPages"
             @click="currentPage++"
           >
-            Sau
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </nav>
       </div>
@@ -235,6 +270,11 @@ import { useEventStore } from '@/stores/event.store'
 import { categories as staticCategories } from '@/data/events'
 import { logAction } from '@/services/actionLogger'
 
+// Lọc các sự kiện gần hết vé (được tính toán từ backend)
+const almostSoldOutEvents = computed(() => {
+  return eventStore.events.filter(ev => ev.isAlmostSoldOut)
+})
+
 const eventStore     = useEventStore()
 const heroIndex      = ref(0)
 const searchQ        = ref('')
@@ -242,9 +282,16 @@ const activeCategory = ref('all')
 const sortBy         = ref('date')
 const emailSub       = ref('')
 
-// Fetch from API on mount
+// Initial fetch
 onMounted(() => {
-  eventStore.fetchPublished({ size: 5000 }, { allowMockFallback: false })
+  eventStore.fetchFeatured() // Fetch all featured events once
+  eventStore.fetchPublished({
+    page: currentPage.value - 1,
+    size: pageSize.value,
+    category: activeCategory.value === 'all' ? null : activeCategory.value,
+    q: searchQ.value.trim(),
+    sort: sortBy.value
+  }, { allowMockFallback: false })
   eventStore.fetchCategories()
 })
 
@@ -260,9 +307,9 @@ const categories = computed(() => {
 })
 
 const featuredEvents = computed(() => {
-  const fromApi = eventStore.events.filter((e) => e.featured)
+  const fromApi = eventStore.featuredEvents
   if (fromApi.length) return fromApi
-  // If no featured records, fallback to normal events from API.
+  // Fallback to normal events if no featured ones yet
   return eventStore.events
 })
 
@@ -316,40 +363,39 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(heroTimer))
 
+// Pagination & Lazy Loading logic
 const currentPage = ref(1) // 1-based
-const pageSize = ref(20) // Chuẩn hóa page size = 20 theo guideline tối ưu FE
+const pageSize = ref(20)
 
-const filteredEventsAll = computed(() => {
-  let list = [...eventStore.events]
-  if (activeCategory.value !== 'all') {
-    list = list.filter((e) => e.category === activeCategory.value)
+// Helper to get params
+const getFetchParams = () => ({
+  page: currentPage.value - 1,
+  size: pageSize.value,
+  category: activeCategory.value === 'all' ? null : activeCategory.value,
+  q: searchQ.value.trim(),
+  sort: sortBy.value
+})
+
+// Trigger fetch on changes
+let fetchTimer = null
+watch([searchQ, activeCategory, sortBy, currentPage], ([newQ, newCat, newSort, newPage], [oldQ, oldCat, oldSort, oldPage]) => {
+  // If filters changed, reset to page 1
+  if (newQ !== oldQ || newCat !== oldCat || newSort !== oldSort) {
+    if (currentPage.value !== 1) {
+      currentPage.value = 1
+      return // watch will trigger again for currentPage
+    }
   }
-  if (searchQ.value.trim()) {
-    const q = searchQ.value.toLowerCase()
-    list = list.filter(
-      (e) =>
-        (e.title  ?? '').toLowerCase().includes(q) ||
-        (e.venue  ?? '').toLowerCase().includes(q) ||
-        (e.city   ?? '').toLowerCase().includes(q)
-    )
-  }
-  if (sortBy.value === 'price_asc')  list.sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
-  if (sortBy.value === 'price_desc') list.sort((a, b) => (b.price ?? 0) - (a.price ?? 0))
-  if (sortBy.value === 'rating')     list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-  if (sortBy.value === 'date')       list.sort((a, b) => new Date(a.date) - new Date(b.date))
-  return list
+
+  clearTimeout(fetchTimer)
+  fetchTimer = setTimeout(() => {
+    eventStore.fetchPublished(getFetchParams(), { allowMockFallback: false })
+  }, 350)
 })
 
-const totalPages = computed(() => Math.ceil(filteredEventsAll.value.length / pageSize.value) || 1)
-
-const filteredEvents = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredEventsAll.value.slice(start, start + pageSize.value)
-})
-
-watch([searchQ, activeCategory, sortBy], () => {
-  currentPage.value = 1
-})
+const totalPages = computed(() => eventStore.pagination.totalPages || 1)
+const filteredEvents = computed(() => eventStore.events)
+const totalResults = computed(() => eventStore.pagination.totalElements || 0)
 
 function resetFilters() {
   searchQ.value        = ''

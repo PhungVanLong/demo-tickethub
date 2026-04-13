@@ -85,6 +85,7 @@ export function normalizeEvent(e) {
         reviewCount: e.reviewCount ?? 0,
         sold: e.sold ?? e.soldCount ?? 0,
         capacity: e.capacity ?? e.totalCapacity ?? 0,
+        isAlmostSoldOut: e.isAlmostSoldOut ?? false,
         description: e.description || '',
         organizer: e.organizer || { name: e.organizerName || 'Organizer', verified: false },
         ticketTypes: (e.ticketTiers || e.ticketTypes || []).map(normalizeTicketTier),
@@ -93,6 +94,7 @@ export function normalizeEvent(e) {
 
 export const useEventStore = defineStore('event', () => {
     const events = ref([])
+    const featuredEvents = ref([])
     const categories = ref([])
     const currentEvent = ref(null)
     const ticketTiers = ref([])
@@ -103,6 +105,17 @@ export const useEventStore = defineStore('event', () => {
     const pagination = ref({ page: 0, size: 50, totalElements: 0, totalPages: 1 })
 
     // ── Actions ────────────────────────────────────────────────────────────────
+    async function fetchFeatured() {
+        try {
+            const data = await eventService.getPublished({ featured: true, size: 50 })
+            const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? [])
+            featuredEvents.value = Array.isArray(raw) ? raw.map(normalizeEvent) : []
+            debugLog('FETCH_FEATURED_SUCCESS', { count: featuredEvents.value.length })
+        } catch (e) {
+            debugLog('FETCH_FEATURED_FAILED', { error: e.message })
+        }
+    }
+
     async function fetchPublished(params = {}, options = {}) {
         const { allowMockFallback = true } = options
         loading.value = true
@@ -238,8 +251,8 @@ export const useEventStore = defineStore('event', () => {
     }
 
     return {
-        events, categories, currentEvent, ticketTiers, seatMap,
+        events, featuredEvents, categories, currentEvent, ticketTiers, seatMap,
         loading, tiersLoading, error, pagination,
-        fetchPublished, fetchCategories, fetchById, fetchTicketTiers, fetchSeatMap, clearCurrent,
+        fetchFeatured, fetchPublished, fetchCategories, fetchById, fetchTicketTiers, fetchSeatMap, clearCurrent,
     }
 })
