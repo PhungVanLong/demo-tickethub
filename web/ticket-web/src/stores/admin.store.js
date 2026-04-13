@@ -148,6 +148,10 @@ function dedupeEvents(list) {
 export const useAdminStore = defineStore('admin', () => {
     const pendingEvents = ref([])
     const allEvents = ref([])
+    const eventPage = ref(1)
+    const eventPageSize = ref(10)
+    const eventTotalPages = ref(1)
+    const eventTotalElements = ref(0)
     const users = ref([])
     const allOrders = ref([])
     const revenueSummary = ref(null)
@@ -193,27 +197,25 @@ export const useAdminStore = defineStore('admin', () => {
         }
     }
 
-    async function fetchAllEvents() {
+    async function fetchAllEvents({ page = 1, size = 10, status = '', search = '' } = {}) {
         loading.value = true
         try {
-            const data = await adminService.getAllEvents({ size: 200 })
-            const raw = Array.isArray(data) ? data : (data.content ?? data.data ?? data)
-            const adminEvents = Array.isArray(raw) ? raw : []
-            allEvents.value = dedupeEvents([...adminEvents, ...pendingEvents.value])
+            const params = { page: page - 1, size };
+            if (status && status !== 'all') params.status = status;
+            if (search) params.q = search;
+            const data = await adminService.getAllEvents(params);
+            // Chuẩn backend trả về dạng page response
+            const content = Array.isArray(data.content) ? data.content : (Array.isArray(data.data) ? data.data : []);
+            allEvents.value = dedupeEvents([...content]);
+            eventTotalPages.value = data.totalPages || 1;
+            eventTotalElements.value = data.totalElements || content.length;
+            eventPage.value = (data.number ?? page - 1) + 1;
         } catch {
-            // Backward-compatible fallback in case admin endpoint is unavailable.
-            try {
-                const publishedData = await eventService.getPublished({ size: 200 })
-                const publishedRaw = Array.isArray(publishedData)
-                    ? publishedData
-                    : (publishedData.content ?? publishedData.data ?? publishedData)
-                const published = Array.isArray(publishedRaw) ? publishedRaw : []
-                allEvents.value = dedupeEvents([...published, ...pendingEvents.value])
-            } catch {
-                allEvents.value = []
-            }
+            allEvents.value = [];
+            eventTotalPages.value = 1;
+            eventTotalElements.value = 0;
         } finally {
-            loading.value = false
+            loading.value = false;
         }
     }
 
@@ -460,6 +462,7 @@ export const useAdminStore = defineStore('admin', () => {
         loading, usersLoading, ordersLoading, revenueLoading, payoutLoading, payoutError, error,
         kpiRevenue, kpiOrders, kpiUsers, kpiTickets,
         fetchPendingEvents, fetchAllEvents, fetchPlatformStats,
+        eventPage, eventPageSize, eventTotalPages, eventTotalElements,
         fetchRevenueSummary, fetchPayments,
         previewOrganizerPayout, executeOrganizerPayout,
         fetchUsers, activateUser, deactivateUser, promoteOrganizer, demoteCustomer, deleteUser,

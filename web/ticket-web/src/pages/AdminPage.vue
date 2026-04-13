@@ -57,13 +57,37 @@
         </div>
 
         <AdminTable
-          :columns="eventColumns"
-          :rows="filteredAdminEvents"
-          :total-rows="filteredAdminEvents.length"
-          :current-page="1"
-          :page-size="10"
-          empty-text="No events found"
-        >
+            :columns="eventColumns"
+            :rows="adminStore.allEvents"
+            :total-rows="adminStore.eventTotalElements"
+            :current-page="adminStore.eventPage"
+            :page-size="adminStore.eventPageSize"
+            :total-pages="adminStore.eventTotalPages"
+            @page-change="onEventPageChange"
+            empty-text="No events found"
+          >
+          // Phân trang động cho bảng sự kiện
+          function onEventPageChange(page) {
+            adminStore.fetchAllEvents({
+              page,
+              size: adminStore.eventPageSize,
+              status: eventStatusFilter.value,
+              search: eventSearch.value.trim(),
+            })
+          }
+
+          watch([eventStatusFilter, eventSearch], () => {
+            adminStore.fetchAllEvents({
+              page: 1,
+              size: adminStore.eventPageSize,
+              status: eventStatusFilter.value,
+              search: eventSearch.value.trim(),
+            })
+          })
+
+          onMounted(() => {
+            adminStore.fetchAllEvents({ page: 1, size: adminStore.eventPageSize })
+          })
           <template #cell-title="{ row }">
             <div class="flex items-center gap-3">
               <img :src="resolveEventImage(row)" :alt="row.title" class="w-10 h-10 rounded-lg object-cover shrink-0" />
@@ -480,6 +504,31 @@
 </template>
 
 <script setup>
+import { watch } from 'vue'
+// ...existing code...
+
+// Phân trang động cho bảng sự kiện
+function onEventPageChange(page) {
+  adminStore.fetchAllEvents({
+    page,
+    size: adminStore.eventPageSize,
+    status: eventStatusFilter.value,
+    search: eventSearch.value.trim(),
+  })
+}
+
+watch([eventStatusFilter, eventSearch], () => {
+  adminStore.fetchAllEvents({
+    page: 1,
+    size: adminStore.eventPageSize,
+    status: eventStatusFilter.value,
+    search: eventSearch.value.trim(),
+  })
+})
+
+onMounted(() => {
+  adminStore.fetchAllEvents({ page: 1, size: adminStore.eventPageSize })
+})
 import { ref, computed, reactive, onMounted } from 'vue'
 import AdminTable from '@/components/AdminTable.vue'
 import PlatformSalesManagement from '@/components/PlatformSalesManagement.vue'

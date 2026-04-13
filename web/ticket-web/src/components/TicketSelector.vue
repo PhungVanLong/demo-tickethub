@@ -28,6 +28,7 @@
             </span>
           </div>
           <p class="text-lg font-bold text-violet-400 mt-0.5">{{ formatPrice(type.price) }}</p>
+          <p class="text-xs text-zinc-400 mt-1">Số ghế trống: {{ typeAvailability(type) }}</p>
           <p class="text-xs text-zinc-500 mt-0.5">Max {{ typeMaxPerOrder(type) }} per order</p>
         </div>
 

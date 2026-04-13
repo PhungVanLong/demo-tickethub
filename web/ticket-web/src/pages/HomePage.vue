@@ -164,7 +164,7 @@
         v-else-if="filteredEvents.length"
         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
       >
-        <EventCard v-for="event in filteredEvents" :key="event.id" :event="event" />
+        <EventCard v-for="(event, idx) in filteredEvents" :key="event.id" :event="event" :eventIndex="(currentPage - 1) * pageSize + idx" />
       </div>
 
       <!-- Empty state -->
@@ -175,6 +175,27 @@
         <p class="text-zinc-400 text-lg font-semibold">No events found</p>
         <p class="text-zinc-600 text-sm mt-1">Try a different search or category</p>
         <button class="btn-secondary mt-4" @click="resetFilters">Clear Filters</button>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="filteredEventsAll.length > pageSize" class="flex justify-center mt-10">
+        <nav class="inline-flex items-center gap-2">
+          <button
+            class="px-3 py-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+            :disabled="currentPage === 1"
+            @click="currentPage--"
+          >
+            Trước
+          </button>
+          <span class="text-white font-semibold px-2">Trang {{ currentPage }} / {{ totalPages }}</span>
+          <button
+            class="px-3 py-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+            :disabled="currentPage === totalPages"
+            @click="currentPage++"
+          >
+            Sau
+          </button>
+        </nav>
       </div>
     </section>
 
@@ -211,6 +232,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import EventCard from '@/components/EventCard.vue'
 import PlatformSaleBanner from '@/components/PlatformSaleBanner.vue'
 import { useEventStore } from '@/stores/event.store'
+import { categories as staticCategories } from '@/data/events'
 import { logAction } from '@/services/actionLogger'
 
 const eventStore     = useEventStore()
@@ -222,20 +244,19 @@ const emailSub       = ref('')
 
 // Fetch from API on mount
 onMounted(() => {
-  eventStore.fetchPublished({ size: 100 }, { allowMockFallback: false })
+  eventStore.fetchPublished({ size: 5000 }, { allowMockFallback: false })
   eventStore.fetchCategories()
 })
 
 const categories = computed(() => {
+  // Ưu tiên lấy từ API, nếu không có thì lấy từ static
   if (eventStore.categories.length) {
     return [
       { label: 'All', value: 'all' },
       ...eventStore.categories.map((c) => ({ label: c, value: c })),
     ]
   }
-  // Fallback from real loaded events only (no static mock import)
-  const set = new Set(eventStore.events.map((e) => e.category).filter(Boolean))
-  return [{ label: 'All', value: 'all' }, ...Array.from(set).map((c) => ({ label: c, value: c }))]
+  return staticCategories
 })
 
 const featuredEvents = computed(() => {
@@ -295,9 +316,11 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(heroTimer))
 
-const filteredEvents = computed(() => {
-  let list = [...eventStore.events]
+const currentPage = ref(1) // 1-based
+const pageSize = ref(20) // Chuẩn hóa page size = 20 theo guideline tối ưu FE
 
+const filteredEventsAll = computed(() => {
+  let list = [...eventStore.events]
   if (activeCategory.value !== 'all') {
     list = list.filter((e) => e.category === activeCategory.value)
   }
@@ -310,13 +333,22 @@ const filteredEvents = computed(() => {
         (e.city   ?? '').toLowerCase().includes(q)
     )
   }
-
   if (sortBy.value === 'price_asc')  list.sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
   if (sortBy.value === 'price_desc') list.sort((a, b) => (b.price ?? 0) - (a.price ?? 0))
   if (sortBy.value === 'rating')     list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
   if (sortBy.value === 'date')       list.sort((a, b) => new Date(a.date) - new Date(b.date))
-
   return list
+})
+
+const totalPages = computed(() => Math.ceil(filteredEventsAll.value.length / pageSize.value) || 1)
+
+const filteredEvents = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredEventsAll.value.slice(start, start + pageSize.value)
+})
+
+watch([searchQ, activeCategory, sortBy], () => {
+  currentPage.value = 1
 })
 
 function resetFilters() {

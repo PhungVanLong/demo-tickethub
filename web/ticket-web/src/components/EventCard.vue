@@ -4,12 +4,14 @@
     class="card card-hover group block cursor-pointer animate-fade-in"
   >
     <!-- Thumbnail -->
+
     <div class="relative overflow-hidden aspect-[16/9]">
       <img
         :src="event.image"
         :alt="event.title"
         class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         loading="lazy"
+        :fetchpriority="eventIndex === 0 ? 'high' : undefined"
       />
 
       <!-- Gradient overlay -->
@@ -108,9 +110,13 @@
 <script setup>
 import { computed } from 'vue'
 
+// Nhận index để xác định ảnh đầu tiên cho fetchpriority
 const props = defineProps({
   event: { type: Object, required: true },
+  eventIndex: { type: Number, default: 0 },
 })
+
+// ...existing code...
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const dateObj = computed(() => new Date(props.event.date))

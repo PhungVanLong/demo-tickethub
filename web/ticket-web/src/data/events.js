@@ -184,6 +184,16 @@ export const events = [
 
 export const categories = [
     { label: 'All', value: 'all' },
+    { label: 'Âm nhạc', value: 'Âm nhạc' },
+    { label: 'Thể thao', value: 'Thể thao' },
+    { label: 'Công nghệ', value: 'Công nghệ' },
+    { label: 'Nghệ thuật', value: 'Nghệ thuật' },
+    { label: 'Ẩm thực', value: 'Ẩm thực' },
+    { label: 'Giáo dục', value: 'Giáo dục' },
+    { label: 'Kinh doanh', value: 'Kinh doanh' },
+    { label: 'Giải trí', value: 'Giải trí' },
+    { label: 'Sức khỏe', value: 'Sức khỏe' },
+    { label: 'Du lịch', value: 'Du lịch' },
     { label: 'Concert', value: 'Concert' },
     { label: 'Festival', value: 'Festival' },
     { label: 'Conference', value: 'Conference' },

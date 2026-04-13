@@ -3,27 +3,9 @@ import api from './api'
 export const platformSalesService = {
   // Get active platform sales (public, no auth)
   async getActiveSales() {
-    const candidates = [
-      '/api/platform-sales/active',
-      '/api/admin/platform-sales/active',
-    ]
-
-    let lastError = null
-    for (const url of candidates) {
-      try {
-        const res = await api.get(url)
-        return res.data
-      } catch (err) {
-        lastError = err
-      }
-    }
-
-    const status = lastError?.response?.status
-    if (status === 401 || status === 403 || status === 404) {
-      return []
-    }
-
-    throw lastError
+    // Gọi đúng URL backend expose
+    const res = await api.get('/api/admin/platform-sales/active')
+    return res.data
   },
 
   // Get active platform sales (admin)
