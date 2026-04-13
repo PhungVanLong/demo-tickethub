@@ -59,6 +59,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/events/stats/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/checkout/events/*/tiers").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/checkout/payments/webhook/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/platform-sales/**").permitAll()
                 // Admin only
                 .requestMatchers(HttpMethod.GET, "/api/events/pending").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/events/*/approve").hasRole("ADMIN")

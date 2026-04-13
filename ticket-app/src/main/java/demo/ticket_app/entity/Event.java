@@ -19,6 +19,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -28,7 +29,12 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "events")
+@Table(name = "events", indexes = {
+    @Index(name = "idx_event_status", columnList = "status"),
+    @Index(name = "idx_event_featured", columnList = "featured"),
+    @Index(name = "idx_event_city", columnList = "city"),
+    @Index(name = "idx_event_category", columnList = "category")
+})
 @Data
 @Builder
 @NoArgsConstructor

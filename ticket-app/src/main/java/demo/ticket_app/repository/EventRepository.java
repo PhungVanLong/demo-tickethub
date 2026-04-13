@@ -54,5 +54,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
                                     @Param("status") EventStatus status);
     
     @Query("SELECT e FROM Event e WHERE e.title LIKE %:search% OR e.description LIKE %:search%")
-    List<Event> findByTitleOrDescriptionContaining(@Param("search") String search);
+    Page<Event> findByTitleOrDescriptionContaining(@Param("search") String search, Pageable pageable);
+
+    @Query("SELECT DISTINCT e.category FROM Event e WHERE e.category IS NOT NULL")
+    List<String> findDistinctCategories();
 }

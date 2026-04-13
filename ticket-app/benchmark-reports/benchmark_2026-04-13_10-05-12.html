@@ -1,0 +1,103 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TicketHub Benchmark Report</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:2rem;line-height:1.6}
+.container{max-width:1400px;margin:0 auto}
+h1{font-size:2rem;margin-bottom:.5rem;background:linear-gradient(135deg,#6366f1,#8b5cf6,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+h2{font-size:1.3rem;margin:2rem 0 1rem;color:#818cf8;border-bottom:2px solid #1e293b;padding-bottom:.5rem}
+.meta{color:#64748b;margin-bottom:2rem;font-size:.9rem}
+.summary-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem}
+.card{background:#1e293b;border-radius:12px;padding:1.5rem;border:1px solid #334155;transition:transform .2s}
+.card:hover{transform:translateY(-2px);border-color:#6366f1}
+.card-label{font-size:.8rem;color:#64748b;text-transform:uppercase;letter-spacing:1px}
+.card-value{font-size:2rem;font-weight:bold;margin-top:.25rem}
+.green{color:#22c55e}.blue{color:#6366f1}.yellow{color:#eab308}.red{color:#ef4444}.purple{color:#a855f7}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:12px;overflow:hidden;margin-bottom:2rem}
+th{background:#334155;padding:12px 16px;text-align:left;font-size:.8rem;text-transform:uppercase;letter-spacing:1px;color:#94a3b8}
+td{padding:10px 16px;border-bottom:1px solid #263348}
+tr:hover td{background:#263348}
+.badge{padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:bold;display:inline-block}
+.badge-cache{background:#6366f120;color:#818cf8;border:1px solid #6366f140}
+.badge-nocache{background:#64748b20;color:#94a3b8;border:1px solid #64748b40}
+.badge-success{background:#22c55e20;color:#22c55e;border:1px solid #22c55e40}
+.badge-fail{background:#ef444420;color:#ef4444;border:1px solid #ef444440}
+.bar{height:20px;border-radius:4px;min-width:4px}
+.footer{margin-top:3rem;color:#475569;font-size:.85rem;text-align:center}
+.note{color:#64748b;font-size:.85rem;margin-bottom:1rem}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>TicketHub Performance Report</h1>
+<div class="meta">Generated: 2026-04-13 10:05:43 | Server: http://localhost:8081 | Data: ~200 users, ~100 events | Redis TTL: 60s</div>
+
+<div class="summary-cards">
+<div class="card"><div class="card-label">Endpoints Tested</div><div class="card-value blue">18</div></div>
+<div class="card"><div class="card-label">Success / Fail</div><div class="card-value green">16 <span class="red" style="font-size:1rem">/ 2</span></div></div>
+<div class="card"><div class="card-label">Avg Cached Response</div><div class="card-value green">22.5 ms</div></div>
+<div class="card"><div class="card-label">Avg Uncached Response</div><div class="card-value yellow">20.2 ms</div></div>
+<div class="card"><div class="card-label">Cache Speedup</div><div class="card-value purple">0.9x</div></div>
+<div class="card"><div class="card-label">Concurrent Users</div><div class="card-value blue">50</div></div>
+</div>
+
+<h2>Phase 1: Individual Endpoint Benchmarks</h2>
+<p class="note">Cold = first request (DB/cache miss) | Avg/Min/Max = subsequent 5 requests</p>
+<table>
+<thead><tr><th>Endpoint</th><th>Cache</th><th>Cold</th><th>Avg</th><th>Min</th><th>Max</th><th>Speedup</th><th>Size</th><th>Status</th></tr></thead>
+<tbody><tr><td>Published Events (page 1)</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>26 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>25.4 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>23 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>29 ms</span></td><td><strong>1x</strong></td><td>6.1 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Published Events (page 2)</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>29 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>24.6 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>21 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>30 ms</span></td><td><strong>1.2x</strong></td><td>6.6 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Filter by Category</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>20 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>20 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>23 ms</span></td><td><strong>1x</strong></td><td>0.1 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Filter by City</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>23 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>23.4 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>23 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>24 ms</span></td><td><strong>1x</strong></td><td>0.1 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Filter Featured</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>24 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>23 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>20 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>27 ms</span></td><td><strong>1x</strong></td><td>6.7 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Sort by Date DESC</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>20.4 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>22 ms</span></td><td><strong>0.9x</strong></td><td>6.6 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Sort by Price ASC</td><td><span class='badge badge-cache'>CACHED</span></td><td><span style='color:#22c55e;font-weight:bold'>21 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>21 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>20 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>22 ms</span></td><td><strong>1x</strong></td><td>6.5 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Event Detail (ID=1)</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>27 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>28.6 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>24 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>40 ms</span></td><td><strong>0.9x</strong></td><td>0.6 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Event Detail (ID=5)</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>6 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>5.8 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>5 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>6 ms</span></td><td><strong>1x</strong></td><td>0 KB</td><td><span class='badge badge-fail'>404</span></td></tr>
+<tr><td>Search Events</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>4 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>4 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>3 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>5 ms</span></td><td><strong>1x</strong></td><td>0 KB</td><td><span class='badge badge-fail'>500</span></td></tr>
+<tr><td>Categories List</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>25 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>21.8 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>26 ms</span></td><td><strong>1.1x</strong></td><td>0.1 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Stats: Total Events</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>20 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19.2 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>18 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>21 ms</span></td><td><strong>1x</strong></td><td>0 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Stats: Published Count</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>18 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>18.2 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>17 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><strong>1x</strong></td><td>0 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Stats: Pending Count</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>18 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>18 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>17 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><strong>1x</strong></td><td>0 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>City Events</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>22 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>20 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>22 ms</span></td><td><strong>1.1x</strong></td><td>0 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Platform Sales Active</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>22 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>18.8 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>18 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><strong>1.2x</strong></td><td>0 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Active Vouchers</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>25 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>20.4 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>18 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>25 ms</span></td><td><strong>1.2x</strong></td><td>0 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+<tr><td>Health Check</td><td><span class='badge badge-nocache'>NO CACHE</span></td><td><span style='color:#22c55e;font-weight:bold'>16 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>17 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>16 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>19 ms</span></td><td><strong>0.9x</strong></td><td>0.1 KB</td><td><span class='badge badge-success'>200</span></td></tr>
+</tbody>
+</table>
+
+<h2>Phase 2: Redis Cache Effectiveness</h2>
+<p class="note">10 sequential requests to /api/events/published - observe the cache warmup pattern</p>
+<table>
+<thead><tr><th style="width:100px">Request</th><th style="width:120px">Time</th><th>Visual</th></tr></thead>
+<tbody><tr><td>#1</td><td>22 ms</td><td><div class='bar' style='width:4%;background:#22c55e'></div></td></tr>
+<tr><td>#2</td><td>20 ms</td><td><div class='bar' style='width:4%;background:#22c55e'></div></td></tr>
+<tr><td>#3</td><td>22 ms</td><td><div class='bar' style='width:4%;background:#22c55e'></div></td></tr>
+<tr><td>#4</td><td>32 ms</td><td><div class='bar' style='width:6%;background:#22c55e'></div></td></tr>
+<tr><td>#5</td><td>32 ms</td><td><div class='bar' style='width:6%;background:#22c55e'></div></td></tr>
+<tr><td>#6</td><td>21 ms</td><td><div class='bar' style='width:4%;background:#22c55e'></div></td></tr>
+<tr><td>#7</td><td>24 ms</td><td><div class='bar' style='width:5%;background:#22c55e'></div></td></tr>
+<tr><td>#8</td><td>20 ms</td><td><div class='bar' style='width:4%;background:#22c55e'></div></td></tr>
+<tr><td>#9</td><td>23 ms</td><td><div class='bar' style='width:5%;background:#22c55e'></div></td></tr>
+<tr><td>#10</td><td>22 ms</td><td><div class='bar' style='width:4%;background:#22c55e'></div></td></tr>
+</tbody>
+</table>
+
+<h2>Phase 3: Concurrent Load Test (50 users)</h2>
+<p class="note">All requests fired simultaneously - measures server capacity under pressure</p>
+<table>
+<thead><tr><th>Endpoint</th><th>Reqs</th><th>Success%</th><th>Avg</th><th>P50</th><th>P95</th><th>P99</th><th>Min</th><th>Max</th><th>Throughput</th></tr></thead>
+<tbody><tr><td>Published Events</td><td>50</td><td><span style='color:#22c55e;font-weight:bold'>100%</span></td><td><span style='color:#eab308;font-weight:bold'>122.9 ms</span></td><td><span style='color:#eab308;font-weight:bold'>119 ms</span></td><td><span style='color:#eab308;font-weight:bold'>151 ms</span></td><td><span style='color:#eab308;font-weight:bold'>175 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>96 ms</span></td><td><span style='color:#eab308;font-weight:bold'>175 ms</span></td><td><strong>285.7 req/s</strong></td></tr>
+<tr><td>Event Detail</td><td>50</td><td><span style='color:#22c55e;font-weight:bold'>100%</span></td><td><span style='color:#eab308;font-weight:bold'>127.9 ms</span></td><td><span style='color:#eab308;font-weight:bold'>123 ms</span></td><td><span style='color:#eab308;font-weight:bold'>170 ms</span></td><td><span style='color:#eab308;font-weight:bold'>201 ms</span></td><td><span style='color:#eab308;font-weight:bold'>101 ms</span></td><td><span style='color:#eab308;font-weight:bold'>201 ms</span></td><td><strong>248.8 req/s</strong></td></tr>
+<tr><td>Search</td><td>50</td><td><span style='color:#ef4444;font-weight:bold'>0%</span></td><td><span style='color:#eab308;font-weight:bold'>121.9 ms</span></td><td><span style='color:#eab308;font-weight:bold'>118 ms</span></td><td><span style='color:#eab308;font-weight:bold'>181 ms</span></td><td><span style='color:#eab308;font-weight:bold'>207 ms</span></td><td><span style='color:#22c55e;font-weight:bold'>91 ms</span></td><td><span style='color:#eab308;font-weight:bold'>207 ms</span></td><td><strong>241.5 req/s</strong></td></tr>
+</tbody>
+</table>
+
+<div class="footer">TicketHub Benchmark Report - Generated by benchmark.ps1</div>
+</div>
+</body>
+</html>

@@ -17,6 +17,9 @@ public interface TicketTierRepository extends JpaRepository<TicketTier, Long> {
 
     List<TicketTier> findBySeatMapEventId(Long eventId);
 
+    @Query("SELECT t FROM TicketTier t JOIN FETCH t.seatMap sm WHERE sm.eventId IN :eventIds")
+    List<TicketTier> findBySeatMapEventIdIn(@Param("eventIds") List<Long> eventIds);
+
     List<TicketTier> findBySeatMapEventIdAndQuantityAvailableGreaterThan(Long eventId, Integer quantityAvailable);
 
     java.util.Optional<TicketTier> findByIdAndSeatMapEventId(Long id, Long eventId);

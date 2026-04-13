@@ -96,9 +96,8 @@ public class EventController {
 
     @GetMapping("/categories")
     public ResponseEntity<Map<String, List<String>>> getEventCategories() {
-        return ResponseEntity.ok(Map.of("categories", List.of(
-                "Concert", "Festival", "Conference", "Comedy", "Sports", "Expo"
-        )));
+        List<String> categories = eventService.getEventCategories();
+        return ResponseEntity.ok(Map.of("categories", categories));
     }
 
     @PostMapping
@@ -155,9 +154,11 @@ public class EventController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<EventListItemResponse>> searchEvents(@RequestParam String term) {
-        List<EventListItemResponse> events = eventService.searchEventListItems(term);
-        return ResponseEntity.ok(events);
+    public ResponseEntity<PageResponse<EventListItemResponse>> searchEvents(
+            @RequestParam(name = "q", defaultValue = "") String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(eventService.searchEventListItems(query, page, size));
     }
 
     @GetMapping("/stats/total")

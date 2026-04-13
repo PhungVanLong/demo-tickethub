@@ -9,8 +9,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -30,6 +35,7 @@ import demo.ticket_app.entity.EventStatus;
 import demo.ticket_app.entity.SeatMap;
 import demo.ticket_app.entity.TicketTier;
 import demo.ticket_app.entity.TicketTierType;
+import demo.ticket_app.entity.User;
 import demo.ticket_app.entity.UserRole;
 import demo.ticket_app.exception.ResourceNotFoundException;
 import demo.ticket_app.repository.EventApprovalRepository;
@@ -57,15 +63,17 @@ public class EventService {
 
     @Transactional(readOnly = true)
     public List<EventListItemResponse> getAllEvents() {
-        return eventRepository.findAll().stream()
-                .map(this::toEventListItem)
-                .toList();
+        return toEventListItems(eventRepository.findAll());
     }
 
     public List<Event> getPublishedEvents() {
         return eventRepository.findByStatus(EventStatus.PUBLISHED);
     }
 
+    @Cacheable(
+        value = "events",
+        key = "'published:' + #page + ':' + #size + ':' + #category + ':' + #city + ':' + #featured + ':' + #sort"
+    )
     @Transactional(readOnly = true)
     public PageResponse<EventListItemResponse> getPublishedEvents(
             int page,
@@ -79,9 +87,8 @@ public class EventService {
         String normalizedCity = normalizeFilter(city);
 
         if ("price_asc".equals(sort) || "price_desc".equals(sort)) {
-            List<EventListItemResponse> all = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured)
-                .stream()
-                .map(this::toEventListItem)
+            List<Event> allEvents = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured);
+            List<EventListItemResponse> all = toEventListItems(allEvents).stream()
                 .sorted("price_desc".equals(sort)
                     ? Comparator.comparing(EventListItemResponse::minPrice, Comparator.nullsLast(BigDecimal::compareTo)).reversed()
                     : Comparator.comparing(EventListItemResponse::minPrice, Comparator.nullsLast(BigDecimal::compareTo)))
@@ -98,15 +105,15 @@ public class EventService {
         }
 
         var pageable = PageRequest.of(page, size, resolveSort(sort));
-        var events = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, pageable).map(this::toEventListItem);
-        return PageResponse.from(events);
+        var eventsPage = eventRepository.findPublishedEvents(normalizedCategory, normalizedCity, featured, pageable);
+        List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
+        return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
+                eventsPage.getTotalElements(), eventsPage.getTotalPages());
     }
 
     @Transactional(readOnly = true)
     public List<EventListItemResponse> getPendingEvents() {
-        return eventRepository.findByStatus(EventStatus.PENDING).stream()
-                .map(this::toEventListItem)
-                .toList();
+        return toEventListItems(eventRepository.findByStatus(EventStatus.PENDING));
     }
 
     public List<Event> getEventsByOrganizer(UUID organizerId) {
@@ -115,9 +122,7 @@ public class EventService {
 
     @Transactional(readOnly = true)
     public List<EventListItemResponse> getEventListByOrganizer(UUID organizerId) {
-        return eventRepository.findByOrganizerId(organizerId).stream()
-                .map(this::toEventListItem)
-                .toList();
+        return toEventListItems(eventRepository.findByOrganizerId(organizerId));
     }
 
     public List<Event> getEventsByCity(String city) {
@@ -126,9 +131,7 @@ public class EventService {
 
     @Transactional(readOnly = true)
     public List<EventListItemResponse> getEventListByCity(String city) {
-        return eventRepository.findByCity(city).stream()
-                .map(this::toEventListItem)
-                .toList();
+        return toEventListItems(eventRepository.findByCity(city));
     }
 
     public List<Event> getEventsByCityAndStatus(String city, EventStatus status) {
@@ -137,9 +140,7 @@ public class EventService {
 
     @Transactional(readOnly = true)
     public List<EventListItemResponse> getEventListByCityAndStatus(String city, EventStatus status) {
-        return eventRepository.findByStatusAndCity(status, city).stream()
-                .map(this::toEventListItem)
-                .toList();
+        return toEventListItems(eventRepository.findByStatusAndCity(status, city));
     }
 
     public Event getEventById(Long eventId) {
@@ -157,6 +158,7 @@ public class EventService {
         return toEventDetail(event);
     }
 
+    @CacheEvict(value = "events", allEntries = true)
     public Event createEvent(CreateEventRequest request, UUID organizerId) {
         if (!request.startTime().isBefore(request.endTime())) {
             throw new IllegalArgumentException("startTime must be before endTime");
@@ -200,6 +202,7 @@ public class EventService {
         return savedEvent;
     }
 
+    @CacheEvict(value = "events", allEntries = true)
     public Event updateEvent(Long eventId, Event eventDetails, UUID requesterId) {
         Event existingEvent = getEventById(eventId);
         if (!canManageEvent(existingEvent, requesterId)) {
@@ -238,6 +241,7 @@ public class EventService {
         return updatedEvent;
     }
 
+    @CacheEvict(value = "events", allEntries = true)
     public Event approveEvent(Long eventId, UUID adminId, String reason) {
         Objects.requireNonNull(adminId, "adminId is required");
         Event event = getEventById(eventId);
@@ -266,6 +270,7 @@ public class EventService {
         return approvedEvent;
     }
 
+    @CacheEvict(value = "events", allEntries = true)
     public Event rejectEvent(Long eventId, UUID adminId, String reason) {
         Objects.requireNonNull(adminId, "adminId is required");
         Event event = getEventById(eventId);
@@ -312,6 +317,7 @@ public class EventService {
         }
     }
 
+    @CacheEvict(value = "events", allEntries = true)
     public void deleteEvent(Long eventId, UUID requesterId) {
         Event event = getEventById(eventId);
         if (!canManageEvent(event, requesterId)) {
@@ -336,14 +342,16 @@ public class EventService {
     }
 
     public List<Event> searchEvents(String searchTerm) {
-        return eventRepository.findByTitleOrDescriptionContaining(searchTerm);
+        return eventRepository.findByTitleOrDescriptionContaining(searchTerm, PageRequest.of(0, 100)).getContent();
     }
 
     @Transactional(readOnly = true)
-    public List<EventListItemResponse> searchEventListItems(String searchTerm) {
-        return eventRepository.findByTitleOrDescriptionContaining(searchTerm).stream()
-                .map(this::toEventListItem)
-                .toList();
+    public PageResponse<EventListItemResponse> searchEventListItems(String searchTerm, int page, int size) {
+        var pageable = PageRequest.of(page, size, Sort.by("startTime").ascending());
+        var eventsPage = eventRepository.findByTitleOrDescriptionContaining(searchTerm, pageable);
+        List<EventListItemResponse> items = toEventListItems(eventsPage.getContent());
+        return new PageResponse<>(items, eventsPage.getNumber(), eventsPage.getSize(),
+                eventsPage.getTotalElements(), eventsPage.getTotalPages());
     }
 
     public long getTotalEventsCount() {
@@ -368,6 +376,11 @@ public class EventService {
 
     public long getTotalTicketsForEvent(Long eventId) {
         return ticketTierRepository.countTotalTicketsByEventId(eventId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> getEventCategories() {
+        return eventRepository.findDistinctCategories();
     }
 
     private Sort resolveSort(String sort) {
@@ -415,6 +428,63 @@ public class EventService {
                 metrics.totalCapacity(),
                 toOrganizer(normalized.getOrganizerId())
         );
+    }
+
+    /**
+     * Batch conversion — fixes N+1 by pre-fetching all tiers and organizers.
+     * Reduces queries from 1 + 2N down to 3 (events + tiers + organizers).
+     */
+    private List<EventListItemResponse> toEventListItems(List<Event> events) {
+        if (events.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 1 query: batch fetch all ticket tiers for all events
+        List<Long> eventIds = events.stream().map(Event::getId).toList();
+        Map<Long, List<TicketTier>> tiersMap = ticketTierRepository
+                .findBySeatMapEventIdIn(eventIds)
+                .stream()
+                .collect(Collectors.groupingBy(t -> t.getSeatMap().getEventId()));
+
+        // 1 query: batch fetch all organizers
+        Set<UUID> organizerIds = events.stream()
+                .map(Event::getOrganizerId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, User> organizerMap = userRepository.findAllById(organizerIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
+        return events.stream()
+                .map(event -> {
+                    Event normalized = normalizeEvent(event);
+                    List<TicketTier> tiers = tiersMap.getOrDefault(event.getId(), Collections.emptyList());
+                    EventPricingMetrics metrics = computePricingMetrics(tiers);
+                    return new EventListItemResponse(
+                            normalized.getId(),
+                            normalized.getTitle(),
+                            normalized.getSlug(),
+                            normalized.getCategory(),
+                            toUtc(normalized.getStartTime()),
+                            toUtc(normalized.getEndTime()),
+                            normalized.getVenue(),
+                            normalized.getCity(),
+                            normalized.getCountry(),
+                            normalized.getImageUrl(),
+                            normalized.getBannerUrl(),
+                            metrics.minPrice(),
+                            metrics.originalPrice(),
+                            normalized.getStatus(),
+                            Boolean.TRUE.equals(normalized.getFeatured()),
+                            parseTags(normalized.getTags()),
+                            Objects.requireNonNullElse(normalized.getRating(), BigDecimal.ZERO),
+                            Objects.requireNonNullElse(normalized.getReviewCount(), 0L),
+                            metrics.soldCount(),
+                            metrics.totalCapacity(),
+                            toOrganizer(normalized.getOrganizerId(), organizerMap)
+                    );
+                })
+                .toList();
     }
 
     private EventDetailResponse toEventDetail(Event event) {
@@ -477,6 +547,7 @@ public class EventService {
         return event;
     }
 
+    /** Single-event organizer lookup — used by toEventDetail */
     private OrganizerSummaryResponse toOrganizer(UUID organizerId) {
         if (organizerId == null) {
             return new OrganizerSummaryResponse(null, "Unknown organizer", false);
@@ -492,8 +563,30 @@ public class EventService {
         );
     }
 
+    /** Batch-aware organizer lookup — uses pre-fetched map, zero extra queries */
+    private OrganizerSummaryResponse toOrganizer(UUID organizerId, Map<UUID, User> organizerMap) {
+        if (organizerId == null) {
+            return new OrganizerSummaryResponse(null, "Unknown organizer", false);
+        }
+        User user = organizerMap.get(organizerId);
+        if (user == null) {
+            return new OrganizerSummaryResponse(organizerId, "Unknown organizer", false);
+        }
+        return new OrganizerSummaryResponse(
+                organizerId,
+                user.getFullName() != null && !user.getFullName().isBlank() ? user.getFullName() : user.getEmail(),
+                Boolean.TRUE.equals(user.getIsVerified())
+        );
+    }
+
+    /** Single-event pricing — used by toEventDetail (OK to query individually) */
     private EventPricingMetrics pricingMetrics(Long eventId) {
         List<TicketTier> tiers = ticketTierRepository.findBySeatMapEventId(eventId);
+        return computePricingMetrics(tiers);
+    }
+
+    /** Shared pricing computation — used by both single and batch paths */
+    private EventPricingMetrics computePricingMetrics(List<TicketTier> tiers) {
         boolean hasCustomTier = tiers.stream().anyMatch(tier -> !isAutoDefaultTier(tier));
         if (hasCustomTier) {
             tiers = tiers.stream().filter(tier -> !isAutoDefaultTier(tier)).toList();

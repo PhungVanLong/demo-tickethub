@@ -32,6 +32,14 @@ public class PublicPlatformSaleController {
     }
 
     /**
+     * Lấy danh sách platform sales đang active (public — FE hiển thị banner khuyến mãi)
+     */
+    @GetMapping("/active")
+    public ResponseEntity<List<demo.ticket_app.entity.PlatformSale>> getActiveSales() {
+        return ResponseEntity.ok(platformSaleService.getActiveSales());
+    }
+
+    /**
      * Get platform sale info by voucher code (public, FE dùng để kiểm tra trạng thái PlatformSale của voucher platform)
      */
     @GetMapping("/voucher/{voucherCode}")

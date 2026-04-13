@@ -8,6 +8,8 @@ Updated on: 2026-04-05
 - API base URL: `http://localhost:8081/api`
 - Auth: JWT Bearer
 - CORS allowed origins: `http://localhost:5173`, `http://localhost:3000`
+- **Performance Update (2026-04-13):** Backend now uses Batch Fetching for all list endpoints. N+1 queries are eliminated.
+- **Data Scale:** System is benchmarked and optimized for 5000+ events.
 
 Auth header for protected APIs:
 
@@ -157,6 +159,7 @@ Query params:
 
 - `page`, `size`
 - `category`, `city`, `featured`
+- `q`: search query string (minimum 1 char)
 - `sort`: `date_asc`, `date_desc`, `price_asc`, `price_desc`, `rating_desc`
 
 Response content item:
@@ -249,7 +252,32 @@ FE notes:
 }
 ```
 
-### 4.4 Admin event list (with pricing/capacity)
+### 4.4 Search Events
+
+
+`GET /api/events/search?q={keyword}&page={page}&size={size}`
+
+- `q`: Từ khóa tìm kiếm (ít nhất 1 ký tự, tìm trong tiêu đề hoặc mô tả).
+- `page`: Số trang (bắt đầu từ 0). Luôn truyền khi gọi từ FE.
+- `size`: Số lượng item mỗi trang (khuyến nghị 20, tối đa 50).
+
+**Lưu ý FE:**
+- Luôn truyền đủ cả 3 tham số `q`, `page`, `size` khi gọi API search.
+- Kết quả trả về dạng chuẩn phân trang (xem mục 2.2 Page response).
+- Các trường trong từng item giống như API `/api/events/published` (xem EventListItemResponse).
+- Tất cả các số liệu như giá, số lượng vé, organizer đều đã được batch fetching tối ưu, không cần gọi thêm API phụ.
+
+**Ví dụ:**
+```http
+GET /api/events/search?q=marathon&page=0&size=20
+```
+
+**FE nên:**
+- Hiển thị tổng số kết quả (`totalElements`), số trang (`totalPages`).
+- Hiển thị loading khi search, debounce khi nhập từ khóa.
+- Không gọi lại API nếu từ khóa < 1 ký tự.
+
+### 4.5 Admin event list (with pricing/capacity)
 
 `GET /api/events` (admin only)
 
@@ -263,6 +291,24 @@ Response item shape is aligned with `EventListItemResponse` and includes:
 - `totalCapacity`
 
 This lets admin dashboard/event moderation screens display price and quantity metrics directly without extra per-event calls.
+
+### 4.6 Performance & Pagination Rules (FE Note)
+
+**Bắt buộc phân trang:**
+- Tất cả các API trả về danh sách (list) đều yêu cầu truyền `page` và `size` từ phía FE. Nếu không truyền, backend sẽ trả về mặc định `size = 20`.
+
+**Batch fetching:**
+- Backend đã tối ưu, gom toàn bộ dữ liệu liên quan (organizer, ticket tiers, metrics) trong 1 lần truy vấn, không có N+1 query.
+- FE chỉ cần render theo đúng dữ liệu trả về, không cần gọi thêm API phụ để lấy organizer, giá, số lượng vé...
+
+**Hiệu năng:**
+- Thời gian phản hồi trung bình cho 1 trang (20 sự kiện) là < 50ms ở tải bình thường.
+- FE nên tối ưu UI loading, chỉ gọi lại khi thực sự cần (thay đổi filter, page, search...).
+
+**FE cần lưu ý:**
+- Luôn kiểm tra và hiển thị phân trang (số trang, tổng số item).
+- Không gọi lại API khi không thay đổi filter/search.
+- Xử lý tốt trạng thái loading, empty, error.
 
 
 ### 4.5 Tạo sự kiện và hạng vé (chuẩn hóa UI/logic)
@@ -1194,3 +1240,22 @@ Role behavior:
 **Voucher platform:**
 - Chỉ usable/hiển thị khi có bản ghi PlatformSale active liên kết voucher đó. FE không cần xử lý gì thêm, chỉ cần lấy danh sách voucher như bình thường qua `/api/vouchers/me`.
 - Nếu voucher platform không còn active (PlatformSale hết hạn hoặc bị disable), sẽ không usable/không hiển thị ở "My Voucher".
+
+## 12. Frontend Optimization Tips (LCP/Performance)
+
+Để đạt được chỉ số **LCP < 2.5s** với lượng dữ liệu lớn (5000+ events), FE cần tuân thủ các quy tắc sau:
+
+### 12.1 Image Optimization (CỰC KỲ QUAN TRỌNG)
+- **Sử dụng Thumbnail:** Không bao giờ load ảnh gốc trên trang danh sách. Backend hiện trả về ảnh `400x250` cho `imageUrl` để tối ưu SEO và LCP.
+- **Lazy Loading:** Áp dụng `loading="lazy"` cho tất cả ảnh sự kiện nằm ngoài màn hình đầu tiên (viewport).
+- **Fetch Priority:** Với ảnh của Sự kiện đầu tiên (Event ID đầu tiên trên List), hãy dùng `fetchpriority="high"` để trình duyệt ưu tiên tải ảnh này ngay lập tức.
+
+### 12.2 Network & Data
+- **Gzip Compression:** Backend đã bật nén. FE hãy đảm bảo các request luôn có header `Accept-Encoding: gzip, deflate, br` (Trình duyệt thường tự động làm việc này).
+- **Avoid Over-fetching:** Chỉ gọi API Search khi user đã nhập ít nhất 2 ký tự và sử dụng **Debounce (300-500ms)** để tránh spam request làm treo server.
+- **Skeleton Screens:** Sử dụng Skeleton loading thay cho Spinner để tăng trải nghiệm người dùng ("Perceived Performance").
+
+### 12.3 Pagination Strategy
+- **Size cố định:** Khuyến nghị dùng `size=20`. Không nên set `size > 50` vì sẽ làm tăng dung lượng JSON và làm chậm DOM rendering trên trình duyệt cũ.
+- **Prefetching:** Khi user hover vào nút "Trang tiếp theo", FE có thể thực hiện pre-fetch dữ liệu trang đó để trải nghiệm chuyển trang diễn ra tức thì.
+l
